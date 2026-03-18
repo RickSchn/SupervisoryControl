@@ -1,0 +1,35 @@
+plant sea_level:
+    uncontrollable u_sea_rise, u_sea_lower;
+    disc int ls = 0;
+    location Low:
+        initial;
+        marked;
+        edge u_sea_rise when ls < 4 do ls:= ls + 1;
+        edge u_sea_rise when ls = 4 do ls:= ls + 1 goto High;
+    location High:
+        marked;
+        edge u_sea_lower when ls > 1 do ls:= ls - 1;
+        edge u_sea_lower when ls = 1 do ls:= ls - 1 goto Low;
+end
+
+
+plant def gate():
+    controllable c_gate_rise, c_gate_lower;
+    location Closed:
+        initial;
+        marked;
+        edge c_gate_rise goto Halfway;
+    location Halfway:
+        edge c_gate_rise goto Open;
+        edge c_gate_lower goto Closed;
+    location Open:
+        edge c_gate_lower goto Halfway;
+end
+
+Gate1: gate();
+Gate2: gate();
+Gate3: gate();
+Gate4: gate();
+
+
+
