@@ -13,23 +13,42 @@ plant sea_level:
 end
 
 
-plant def gate():
-    controllable c_gate_rise, c_gate_lower;
-    location Closed:
+plant def gate_actuators():
+    controllable c_gate_rise, c_gate_lower,c_gate_stop;
+    disc int h;
+    location Idle:
+
         initial;
         marked;
-        edge c_gate_rise goto Halfway;
-    location Halfway:
-        edge c_gate_rise goto Open;
-        edge c_gate_lower goto Closed;
-    location Open:
-        edge c_gate_lower goto Halfway;
+        edge c_gate_rise when h<6 goto Opening;
+        edge c_gate_lower when h>0 goto Closing;
+    location Closing:
+        edge c_gate_stop do h:= h-3 goto Idle;
+    location Opening:
+        edge c_gate_stop do h:= h+3 goto Idle;
 end
 
-Gate1: gate();
-Gate2: gate();
-Gate3: gate();
-Gate4: gate();
+Gate1: gate_actuators();
+Gate2: gate_actuators();
+Gate3: gate_actuators();
+Gate4: gate_actuators();
+
+
+
+
+plant rain:
+    uncontrollable u_stop_rain,u_start_rain;
+    disc int R;
+    location Dry:
+        initial;
+        marked;
+        edge u_start_rain do R:= 1 goto Rain;
+    location Rain:
+        marked;
+        edge u_stop_rain do R:= 0 goto Dry;
+end
+
+
 
 
 
