@@ -1,35 +1,131 @@
+// ============================================================================
+// Storm Surge Barrier - Uncontrolled Plant Model
+// Hvide Sande, Denmark (4SC080 Assignment 2025-2026)
+// ============================================================================
+
+// --- Sea Water Level ---
+// Tidal cycle abstracted as deterministic sequence through discrete levels.
+// ls in {0,1,2,3,4,5} where each unit represents 1 meter.
+// One full cycle: 0 -> 1 -> 2 -> 3 -> 4 -> 5 -> 4 -> 3 -> 2 -> 1 -> 0
+// Based on equation (1): ls = A - A*sin(...), A=2.5, range [0.0, 5.0]m.
 plant sea_level:
-    uncontrollable u_sea_rise, u_sea_lower;
-    disc int ls = 0;
-    location Low:
-        initial;
-        marked;
-        edge u_sea_rise when ls < 4 do ls:= ls + 1;
-        edge u_sea_rise when ls = 4 do ls:= ls + 1 goto High;
-    location High:
-        marked;
-        edge u_sea_lower when ls > 1 do ls:= ls - 1;
-        edge u_sea_lower when ls = 1 do ls:= ls - 1 goto Low;
+    uncontrollable u_sea_tick;
+    disc int[0..5] ls = 0;
+
+    location Rising0:  initial; marked; edge u_sea_tick do ls := 1 goto Rising1;
+    location Rising1:  marked;         edge u_sea_tick do ls := 2 goto Rising2;
+    location Rising2:  marked;         edge u_sea_tick do ls := 3 goto Rising3;
+    location Rising3:  marked;         edge u_sea_tick do ls := 4 goto Rising4;
+    location Rising4:  marked;         edge u_sea_tick do ls := 5 goto Falling5;
+    location Falling5: marked;         edge u_sea_tick do ls := 4 goto Falling4;
+    location Falling4: marked;         edge u_sea_tick do ls := 3 goto Falling3;
+    location Falling3: marked;         edge u_sea_tick do ls := 2 goto Falling2;
+    location Falling2: marked;         edge u_sea_tick do ls := 1 goto Falling1;
+    location Falling1: marked;         edge u_sea_tick do ls := 0 goto Rising0;
 end
 
+// --- Gate Actuator ---
+// Each gate has 3 discrete positions: Closed (0m), Halfway (3m), Open (6m).
+// Controllable events = motor commands, uncontrollable events = sensor feedback.
+// Intermediate "moving" locations model the gate in transit.
+plant def Gate():
+    controllable c_raise, c_lower;
+    uncontrollable u_at_closed, u_at_halfway, u_at_open;
 
-plant def gate():
-    controllable c_gate_rise, c_gate_lower;
     location Closed:
-        initial;
-        marked;
-        edge c_gate_rise goto Halfway;
+        initial; marked;
+        edge c_raise goto RaisingToHalfway;
+    location RaisingToHalfway:
+        edge u_at_halfway goto Halfway;
     location Halfway:
-        edge c_gate_rise goto Open;
-        edge c_gate_lower goto Closed;
+        edge c_raise goto RaisingToOpen;
+        edge c_lower goto LoweringToClosed;
+    location RaisingToOpen:
+        edge u_at_open goto Open;
     location Open:
-        edge c_gate_lower goto Halfway;
+        edge c_lower goto LoweringToHalfway;
+    location LoweringToHalfway:
+        edge u_at_halfway goto Halfway;
+    location LoweringToClosed:
+        edge u_at_closed goto Closed;
 end
 
-Gate1: gate();
-Gate2: gate();
-Gate3: gate();
-Gate4: gate();
+Gate1: Gate();
+Gate2: Gate();
+Gate3: Gate();
+Gate4: Gate();
 
+// --- Fjord Water Level ---
+// lf in {0,1,2,3,4,5} where each unit represents 1 meter.
+// Rises due to rain inflow, falls due to gate outflow (when lf > ls and gates open).
+// Thresholds: L1 says lf must not exceed 4, L2 says lf must not fall below 1.
+plant fjord_level:
+    uncontrollable u_fjord_rise, u_fjord_lower;
+    disc int[0..5] lf = 2;
 
+    location Normal:
+        initial; marked;
+        edge u_fjord_rise when lf < 5 do lf := lf + 1;
+        edge u_fjord_lower when lf > 0 do lf := lf - 1;
+end
 
+// --- Rain ---
+// Uncontrollable environment: rain can start or stop at any time.
+plant rain:
+    uncontrollable u_rain_start, u_rain_stop;
+
+    location Dry:
+        initial; marked;
+        edge u_rain_start goto Raining;
+    location Raining:
+        marked;
+        edge u_rain_stop goto Dry;
+end
+
+// --- Gate Actuation Timer ---
+// Models the physical cooldown timer. It can start and expire independently.
+// The requirement (G3) that gate commands may only happen when Ready
+// belongs in a separate requirement automaton.
+plant gate_timer:
+    uncontrollable u_timer_start, u_timer_done;
+
+    location Ready:
+        initial; marked;
+        edge u_timer_start goto Cooldown;
+    location Cooldown:
+        edge u_timer_done goto Ready;
+end
+
+// --- Ship Sign ---
+// Controllable sign at each harbor entrance. Ships may only enter when sign is Go.
+plant def ShipSign():
+    controllable c_sign_stop, c_sign_go;
+
+    location Stop:
+        initial; marked;
+        edge c_sign_go goto Go;
+    location Go:
+        edge c_sign_stop goto Stop;
+end
+
+SignNorth: ShipSign();
+SignSouth: ShipSign();
+
+// --- Ships ---
+// Ships arrive uncontrollably at harbor, wait for sign, pass through canal, then leave.
+// One ship model per harbor for modularity.
+plant def Ship(alg bool sign_is_go):
+    uncontrollable u_ship_arrive, u_ship_pass, u_ship_leave;
+
+    location NoShip:
+        initial; marked;
+        edge u_ship_arrive goto Waiting;
+    location Waiting:
+        // Ship can only pass when the sign allows it.
+        edge u_ship_pass when sign_is_go goto Passing;
+    location Passing:
+        edge u_ship_leave goto NoShip;
+end
+
+ShipNorth: Ship(SignNorth.Go);
+ShipSouth: Ship(SignSouth.Go);

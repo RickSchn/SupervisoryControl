@@ -1,0 +1,228 @@
+plant automaton sea_level:
+  uncontrollable u_sea_tick;
+  disc int[0..5] ls = 0;
+  location Rising0:
+    initial;
+    marked;
+    edge u_sea_tick do ls := 1 goto Rising1;
+  location Rising1:
+    marked;
+    edge u_sea_tick do ls := 2 goto Rising2;
+  location Rising2:
+    marked;
+    edge u_sea_tick do ls := 3 goto Rising3;
+  location Rising3:
+    marked;
+    edge u_sea_tick do ls := 4 goto Rising4;
+  location Rising4:
+    marked;
+    edge u_sea_tick do ls := 5 goto Falling5;
+  location Falling5:
+    marked;
+    edge u_sea_tick do ls := 4 goto Falling4;
+  location Falling4:
+    marked;
+    edge u_sea_tick do ls := 3 goto Falling3;
+  location Falling3:
+    marked;
+    edge u_sea_tick do ls := 2 goto Falling2;
+  location Falling2:
+    marked;
+    edge u_sea_tick do ls := 1 goto Falling1;
+  location Falling1:
+    marked;
+    edge u_sea_tick do ls := 0 goto Rising0;
+end
+plant automaton Gate1:
+  controllable c_raise;
+  controllable c_lower;
+  uncontrollable u_at_closed;
+  uncontrollable u_at_halfway;
+  uncontrollable u_at_open;
+  location Closed:
+    initial;
+    marked;
+    edge c_raise goto RaisingToHalfway;
+  location RaisingToHalfway:
+    edge u_at_halfway goto Halfway;
+  location Halfway:
+    edge c_raise goto RaisingToOpen;
+    edge c_lower goto LoweringToClosed;
+  location RaisingToOpen:
+    edge u_at_open goto Open;
+  location Open:
+    edge c_lower goto LoweringToHalfway;
+  location LoweringToHalfway:
+    edge u_at_halfway goto Halfway;
+  location LoweringToClosed:
+    edge u_at_closed goto Closed;
+end
+plant automaton Gate2:
+  controllable c_raise;
+  controllable c_lower;
+  uncontrollable u_at_closed;
+  uncontrollable u_at_halfway;
+  uncontrollable u_at_open;
+  location Closed:
+    initial;
+    marked;
+    edge c_raise goto RaisingToHalfway;
+  location RaisingToHalfway:
+    edge u_at_halfway goto Halfway;
+  location Halfway:
+    edge c_raise goto RaisingToOpen;
+    edge c_lower goto LoweringToClosed;
+  location RaisingToOpen:
+    edge u_at_open goto Open;
+  location Open:
+    edge c_lower goto LoweringToHalfway;
+  location LoweringToHalfway:
+    edge u_at_halfway goto Halfway;
+  location LoweringToClosed:
+    edge u_at_closed goto Closed;
+end
+plant automaton Gate3:
+  controllable c_raise;
+  controllable c_lower;
+  uncontrollable u_at_closed;
+  uncontrollable u_at_halfway;
+  uncontrollable u_at_open;
+  location Closed:
+    initial;
+    marked;
+    edge c_raise goto RaisingToHalfway;
+  location RaisingToHalfway:
+    edge u_at_halfway goto Halfway;
+  location Halfway:
+    edge c_raise goto RaisingToOpen;
+    edge c_lower goto LoweringToClosed;
+  location RaisingToOpen:
+    edge u_at_open goto Open;
+  location Open:
+    edge c_lower goto LoweringToHalfway;
+  location LoweringToHalfway:
+    edge u_at_halfway goto Halfway;
+  location LoweringToClosed:
+    edge u_at_closed goto Closed;
+end
+plant automaton Gate4:
+  controllable c_raise;
+  controllable c_lower;
+  uncontrollable u_at_closed;
+  uncontrollable u_at_halfway;
+  uncontrollable u_at_open;
+  location Closed:
+    initial;
+    marked;
+    edge c_raise goto RaisingToHalfway;
+  location RaisingToHalfway:
+    edge u_at_halfway goto Halfway;
+  location Halfway:
+    edge c_raise goto RaisingToOpen;
+    edge c_lower goto LoweringToClosed;
+  location RaisingToOpen:
+    edge u_at_open goto Open;
+  location Open:
+    edge c_lower goto LoweringToHalfway;
+  location LoweringToHalfway:
+    edge u_at_halfway goto Halfway;
+  location LoweringToClosed:
+    edge u_at_closed goto Closed;
+end
+plant automaton fjord_level:
+  uncontrollable u_fjord_rise;
+  uncontrollable u_fjord_lower;
+  disc int[0..5] lf = 2;
+  location Normal:
+    initial;
+    marked;
+    edge u_fjord_rise when lf < 5 do lf := lf + 1;
+    edge u_fjord_lower when lf > 0 do lf := lf - 1;
+end
+plant automaton rain:
+  uncontrollable u_rain_start;
+  uncontrollable u_rain_stop;
+  location Dry:
+    initial;
+    marked;
+    edge u_rain_start goto Raining;
+  location Raining:
+    marked;
+    edge u_rain_stop goto Dry;
+end
+plant automaton gate_timer:
+  uncontrollable u_timer_start;
+  uncontrollable u_timer_done;
+  location Ready:
+    initial;
+    marked;
+    edge u_timer_start goto Cooldown;
+  location Cooldown:
+    edge u_timer_done goto Ready;
+end
+plant automaton SignNorth:
+  controllable c_sign_stop;
+  controllable c_sign_go;
+  location Stop:
+    initial;
+    marked;
+    edge c_sign_go goto Go;
+  location Go:
+    edge c_sign_stop goto Stop;
+end
+plant automaton SignSouth:
+  controllable c_sign_stop;
+  controllable c_sign_go;
+  location Stop:
+    initial;
+    marked;
+    edge c_sign_go goto Go;
+  location Go:
+    edge c_sign_stop goto Stop;
+end
+plant automaton ShipNorth:
+  uncontrollable u_ship_arrive;
+  uncontrollable u_ship_pass;
+  uncontrollable u_ship_leave;
+  alg bool sign_is_go = SignNorth.Go;
+  location NoShip:
+    initial;
+    marked;
+    edge u_ship_arrive goto Waiting;
+  location Waiting:
+    edge u_ship_pass when sign_is_go goto Passing;
+  location Passing:
+    edge u_ship_leave goto NoShip;
+end
+plant automaton ShipSouth:
+  uncontrollable u_ship_arrive;
+  uncontrollable u_ship_pass;
+  uncontrollable u_ship_leave;
+  alg bool sign_is_go = SignSouth.Go;
+  location NoShip:
+    initial;
+    marked;
+    edge u_ship_arrive goto Waiting;
+  location Waiting:
+    edge u_ship_pass when sign_is_go goto Passing;
+  location Passing:
+    edge u_ship_leave goto NoShip;
+end
+supervisor automaton sup:
+  alphabet Gate1.c_raise, Gate1.c_lower, Gate2.c_raise, Gate2.c_lower, Gate3.c_raise, Gate3.c_lower, Gate4.c_raise, Gate4.c_lower, SignNorth.c_sign_go, SignNorth.c_sign_stop, SignSouth.c_sign_go, SignSouth.c_sign_stop;
+  location:
+    initial;
+    marked;
+    edge Gate1.c_lower when true;
+    edge Gate1.c_raise when true;
+    edge Gate2.c_lower when true;
+    edge Gate2.c_raise when true;
+    edge Gate3.c_lower when true;
+    edge Gate3.c_raise when true;
+    edge Gate4.c_lower when true;
+    edge Gate4.c_raise when true;
+    edge SignNorth.c_sign_go when true;
+    edge SignNorth.c_sign_stop when true;
+    edge SignSouth.c_sign_go when true;
+    edge SignSouth.c_sign_stop when true;
+end

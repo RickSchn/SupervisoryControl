@@ -1,0 +1,24 @@
+from "lib:cif" import *;
+
+// Step 1: Compile check.
+outln("=== Compile check ===");
+cifsim("plant.cif", "--compile-only=on");
+outln("Plant model compiles OK.");
+
+// Step 2: Bounded simulation (20 events, automatic input, random choice).
+outln("");
+outln("=== Bounded simulation (20 events) ===");
+cifsim(
+    "plant.cif",
+    "-i auto",
+    "-a random",
+    "-t 20",
+    "-o state-init,trans-always",
+    "--non-urgent-events=*"
+);
+
+// Step 3: Data-based supervisory controller synthesis.
+outln("");
+outln("=== Data-based synthesis ===");
+cifdatasynth("plant.cif", "-o supervisor.cif");
+outln("Synthesis complete. Output: supervisor.cif");
