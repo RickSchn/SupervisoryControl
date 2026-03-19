@@ -4,12 +4,12 @@ plant sea_level:
     location Low:
         initial;
         marked;
-        edge u_sea_rise when ls < 4 do ls:= ls + 1;
-        edge u_sea_rise when ls = 4 do ls:= ls + 1 goto High;
+        edge u_sea_rise when ls < 400 do ls:= ls + 100;
+        edge u_sea_rise when ls = 400 do ls:= ls + 100 goto High;
     location High:
         marked;
-        edge u_sea_lower when ls > 1 do ls:= ls - 1;
-        edge u_sea_lower when ls = 1 do ls:= ls - 1 goto Low;
+        edge u_sea_lower when ls > 100 do ls:= ls - 100;
+        edge u_sea_lower when ls = 100 do ls:= ls - 100 goto Low;
 end
 
 
@@ -34,18 +34,72 @@ Gate3: gate_actuators();
 Gate4: gate_actuators();
 
 
+alg int total_open = Gate1.h+Gate2.h+Gate3.h+Gate4.h;
+alg int direction_flow = sea_level.ls-fjord_water_level.lvl;
 
 
-plant rain:
-    uncontrollable u_stop_rain,u_start_rain;
-    disc int R;
+plant ships:
+    controllable c_ships_green, c_ships_red;
+    alg bool low_flow = flow.low_flow_sea or flow.no_flow or flow.low_flow_fjord;
+
+    location Green:
+        marked;
+        edge c_ships_red goto Red;
+
+    location Red:
+        initial;
+        edge c_ships_green when low_flow goto Green;
+end
+
+plant fjord_water_level:
+    uncontrollable u_water_step,u_stop_rain,u_start_rain;
+    disc int lvl = 200;
+
     location Dry:
         initial;
         marked;
-        edge u_start_rain do R:= 1 goto Rain;
+        edge u_water_step when flow.high_flow_sea       do lvl := lvl-50;
+        edge u_water_step when flow.low_flow_sea        do lvl := lvl-25;
+        edge u_water_step when flow.no_flow             do lvl := lvl;
+        edge u_water_step when flow.low_flow_fjord      do lvl := lvl+25;
+        edge u_water_step when flow.high_flow_fjord     do lvl := lvl+50;
+        edge u_start_rain goto Rain;
+
     location Rain:
         marked;
-        edge u_stop_rain do R:= 0 goto Dry;
+        edge u_water_step when flow.high_flow_sea       do lvl := lvl;
+        edge u_water_step when flow.low_flow_sea        do lvl := lvl+25;
+        edge u_water_step when flow.no_flow             do lvl := lvl+50;
+        edge u_water_step when flow.low_flow_fjord      do lvl := lvl+75;
+        edge u_water_step when flow.high_flow_fjord     do lvl := lvl+100;
+        edge u_stop_rain goto Dry;
+end
+
+plant flow:
+    uncontrollable u_flow_sea_high, u_flow_sea_low, u_no_flow, u_flow_fjord_low, u_flow_fjord_high;
+
+    location high_flow_sea:
+        edge u_flow_sea_low     goto low_flow_sea;
+
+    location low_flow_sea:
+        marked;
+        edge u_flow_sea_high    goto high_flow_sea;
+        edge u_no_flow          goto no_flow;
+
+    location no_flow:
+        initial;
+        marked;
+        edge u_flow_sea_low     goto low_flow_sea;
+        edge u_flow_fjord_low   goto low_flow_fjord;
+
+    location low_flow_fjord:
+        marked;
+        edge u_flow_fjord_high  goto high_flow_fjord;
+        edge u_no_flow          goto no_flow;
+
+    location high_flow_fjord:
+        edge u_flow_fjord_low   goto low_flow_fjord;
+
 end
 
 
