@@ -26,28 +26,21 @@ end
 
 // --- Gate Actuator ---
 // Each gate has 3 discrete positions: Closed (0m), Halfway (3m), Open (6m).
-// Controllable events = motor commands, uncontrollable events = sensor feedback.
-// Intermediate "moving" locations model the gate in transit.
+// Controllable events = motor commands. Transitions are instantaneous at
+// the discrete time scale (gate actuation is minutes vs hours for level changes).
 plant def Gate():
     controllable c_raise, c_lower;
-    uncontrollable u_at_closed, u_at_halfway, u_at_open;
 
     location Closed:
-        initial; marked;
-        edge c_raise goto RaisingToHalfway;
-    location RaisingToHalfway:
-        edge u_at_halfway goto Halfway;
+        marked;
+        edge c_raise goto Halfway;
     location Halfway:
-        edge c_raise goto RaisingToOpen;
-        edge c_lower goto LoweringToClosed;
-    location RaisingToOpen:
-        edge u_at_open goto Open;
+        initial; marked;
+        edge c_raise goto Open;
+        edge c_lower goto Closed;
     location Open:
-        edge c_lower goto LoweringToHalfway;
-    location LoweringToHalfway:
-        edge u_at_halfway goto Halfway;
-    location LoweringToClosed:
-        edge u_at_closed goto Closed;
+        marked;
+        edge c_lower goto Halfway;
 end
 
 Gate1: Gate();
@@ -63,10 +56,39 @@ plant fjord_level:
     uncontrollable u_fjord_rise, u_fjord_lower;
     disc int[0..5] lf = 2;
 
+    // Any gate not fully closed
+    alg bool any_gate_open = Gate1.Halfway or Gate1.Open
+                          or Gate2.Halfway or Gate2.Open
+                          or Gate3.Halfway or Gate3.Open
+                          or Gate4.Halfway or Gate4.Open;
+
+    // Water drains from fjord to sea when gates are open and fjord is higher
+    alg bool draining = any_gate_open and lf > sea_level.ls;
+
     location Normal:
         initial; marked;
-        edge u_fjord_rise when lf < 5 do lf := lf + 1;
-        edge u_fjord_lower when lf > 0 do lf := lf - 1;
+        // Fjord rises when raining and no gate is open (eq. 2: when gates are
+        // open, water exchange prevents net accumulation)
+        edge u_fjord_rise when lf < 5 and rain.Raining and not any_gate_open do lf := lf + 1;
+        // Fjord falls when draining towards sea (eq. 2)
+        edge u_fjord_lower when lf > 0 and draining do lf := lf - 1;
+end
+
+// --- Fjord Tick ---
+// Ensures the fjord changes at most once per two sea ticks, modeling that
+// the fjord level changes much slower than the tidal cycle. This gives the
+// supervisor a guaranteed reaction window between consecutive fjord changes.
+plant fjord_tick:
+    location Idle:
+        initial; marked;
+        edge fjord_level.u_fjord_rise goto WaitTick1;
+        edge fjord_level.u_fjord_lower goto WaitTick1;
+    location WaitTick1:
+        marked;
+        edge sea_level.u_sea_tick goto WaitTick2;
+    location WaitTick2:
+        marked;
+        edge sea_level.u_sea_tick goto Idle;
 end
 
 // --- Rain ---
@@ -83,15 +105,17 @@ plant rain:
 end
 
 // --- Gate Actuation Timer ---
-// Models the physical cooldown timer. It can start and expire independently.
-// The requirement (G3) that gate commands may only happen when Ready
-// belongs in a separate requirement automaton.
+// Timer starts on any gate command and expires independently.
+// Synchronized with gate commands so G3 (gate_interval) can enforce cooldown.
 plant gate_timer:
-    uncontrollable u_timer_start, u_timer_done;
+    uncontrollable u_timer_done;
 
     location Ready:
         initial; marked;
-        edge u_timer_start goto Cooldown;
+        edge Gate1.c_raise, Gate1.c_lower,
+             Gate2.c_raise, Gate2.c_lower,
+             Gate3.c_raise, Gate3.c_lower,
+             Gate4.c_raise, Gate4.c_lower goto Cooldown;
     location Cooldown:
         edge u_timer_done goto Ready;
 end
@@ -129,3 +153,58 @@ end
 
 ShipNorth: Ship(SignNorth.Go);
 ShipSouth: Ship(SignSouth.Go);
+
+// ============================================================================
+// Requirements
+// ============================================================================
+
+// --- G1: Gates must close when sea level >= 5 (storm surge) ---
+requirement invariant G1:
+    sea_level.ls >= 5 => Gate1.Closed and Gate2.Closed and Gate3.Closed and Gate4.Closed;
+
+// --- G2: Gates at most halfway when fjord level is in normal range ---
+// Normal range: lf in {2, 3} (not near critical thresholds 1 or 4).
+requirement invariant G2:
+    (fjord_level.lf >= 2 and fjord_level.lf <= 3) =>
+        not Gate1.Open and not Gate2.Open and not Gate3.Open and not Gate4.Open;
+
+// --- G3: Gate actuation interval (timer cooldown) ---
+// After any gate command, wait for timer to expire before next command.
+requirement gate_interval:
+    location Ready:
+        initial; marked;
+        edge Gate1.c_raise, Gate1.c_lower,
+             Gate2.c_raise, Gate2.c_lower,
+             Gate3.c_raise, Gate3.c_lower,
+             Gate4.c_raise, Gate4.c_lower goto Cooldown;
+    location Cooldown:
+        edge gate_timer.u_timer_done goto Ready;
+end
+
+// --- L1: Fjord level must not exceed 4 ---
+requirement invariant L1:
+    fjord_level.lf <= 4;
+
+// --- L2: Fjord level must not fall below 1 ---
+requirement invariant L2:
+    fjord_level.lf >= 1;
+
+// --- S1: Ships only allowed when flow is safe (< 100 m3/s) ---
+// Flow Q = c1 * h_i per gate, c1 = 5 m2/s.
+// Gate openings: Closed=0m, Halfway=3m, Open=6m.
+// Total flow = 5 * total_opening. Safe when < 100, i.e. total_opening < 20.
+alg int total_opening = (if Gate1.Open: 6 elif Gate1.Halfway: 3 else 0 end)
+                      + (if Gate2.Open: 6 elif Gate2.Halfway: 3 else 0 end)
+                      + (if Gate3.Open: 6 elif Gate3.Halfway: 3 else 0 end)
+                      + (if Gate4.Open: 6 elif Gate4.Halfway: 3 else 0 end);
+alg bool flow_safe = sea_level.ls = fjord_level.lf or total_opening * 5 < 100;
+
+// Signs may only show Go when flow is safe.
+requirement invariant S1_north:
+    SignNorth.Go => flow_safe;
+requirement invariant S1_south:
+    SignSouth.Go => flow_safe;
+
+// --- S2: Ships must be allowed eventually (liveness) ---
+// Handled by nonblocking synthesis: NoShip is the only marked location for ships,
+// so the supervisor must ensure every reachable state can reach NoShip.
