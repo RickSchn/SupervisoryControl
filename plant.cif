@@ -44,20 +44,6 @@ plant unit_steps_check:
         edge u_unit_step_medium goto no_gates;
 end
 
-const int flow_coeff_gates = 8;
-alg int total_open = (Gate1.h+Gate2.h+Gate3.h+Gate4.h);
-alg bool sea_to_fjord = sea_level.current_water_level > fjord_water_level.lvl;
-alg int direction_flow = if sea_to_fjord = true: 1 else -1 end;
-alg int flow_gates = flow_coeff_gates*total_open*direction_flow;
-
-const int rain_flow = 50;
-const int flow_max = 100;
-
-const int high_flow_req = 100;
-alg bool flow_low = flow_gates < flow_max;
-
-
-
 plant ships:
     controllable c_ships_green, c_ships_red;
 
@@ -71,20 +57,38 @@ plant ships:
 end
 
 plant fjord_water_level:
-    uncontrollable u_stop_rain,u_start_rain;
+    const int flow_coeff_gates = 8;
+    const int rain_flow = 50;
+    const int flow_max = 100;
+    const int high_flow_req = 100;
+
+    alg int total_open = (Gate1.h+Gate2.h+Gate3.h+Gate4.h);
+    alg bool sea_to_fjord = sea_level.current_water_level > fjord_water_level.lvl;
+    alg int direction_flow = if sea_to_fjord = true: 1 else -1 end;
+    alg int flow_gates = flow_coeff_gates*total_open*direction_flow;
+    alg bool flow_low = flow_gates < flow_max;
+
+
     disc int lvl = 200;
+    location:
+    initial;
+    edge u_unit_step_large   do lvl := lvl + flow_gates + rain.current_rain_flow;
+
+
+end
+
+plant rain:
+    uncontrollable u_stop_rain,u_start_rain;
+    const int rain_flow = 10;
+    disc int current_rain_flow;
 
     location Dry:
         initial;
         marked;
-        edge u_unit_step_large   do lvl := lvl + flow_gates;
-        edge u_start_rain   goto Rain;
-
+        edge u_start_rain   do current_rain_flow := rain_flow   goto Rain;
     location Rain:
         marked;
-        edge u_unit_step_large   do lvl := lvl + flow_gates + rain_flow;
-        edge u_stop_rain    goto Dry;
-end
+        edge u_stop_rain    do current_rain_flow := 0           goto Dry;
 
 
 
