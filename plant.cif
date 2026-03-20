@@ -10,13 +10,18 @@
 // Based on equation (1): ls = A - A*sin(...), A=2.5, range [0.0, 5.0]m.
 plant sea_level:
     uncontrollable u_sea_tick;
+    controllable c_storm_prepare;
     disc int[0..5] ls = 0;
 
     location Rising0:  initial; marked; edge u_sea_tick do ls := 1 goto Rising1;
     location Rising1:  marked;         edge u_sea_tick do ls := 2 goto Rising2;
     location Rising2:  marked;         edge u_sea_tick do ls := 3 goto Rising3;
     location Rising3:  marked;         edge u_sea_tick do ls := 4 goto Rising4;
-    location Rising4:  marked;         edge u_sea_tick do ls := 5 goto Falling5;
+    // Storm warning: sea reaches ls=4, then pauses for the supervisor to
+    // prepare (close gates). c_storm_prepare advances ls to 5.
+    // StormWarning is NOT marked: the supervisor must eventually proceed.
+    location Rising4:  marked;         edge u_sea_tick goto StormWarning;
+    location StormWarning:             edge c_storm_prepare do ls := 5 goto Falling5;
     location Falling5: marked;         edge u_sea_tick do ls := 4 goto Falling4;
     location Falling4: marked;         edge u_sea_tick do ls := 3 goto Falling3;
     location Falling3: marked;         edge u_sea_tick do ls := 2 goto Falling2;
@@ -28,19 +33,26 @@ end
 // Each gate has 3 discrete positions: Closed (0m), Halfway (3m), Open (6m).
 // Controllable events = motor commands. Transitions are instantaneous at
 // the discrete time scale (gate actuation is minutes vs hours for level changes).
+// c_close_all is a shared event: when it fires, ALL gates close atomically.
+// This models emergency storm surge closure.
+controllable c_close_all;
+
 plant def Gate():
     controllable c_raise, c_lower;
 
     location Closed:
-        marked;
-        edge c_raise goto Halfway;
-    location Halfway:
         initial; marked;
+        edge c_raise goto Halfway;
+        edge c_close_all;
+    location Halfway:
+        marked;
         edge c_raise goto Open;
         edge c_lower goto Closed;
+        edge c_close_all goto Closed;
     location Open:
         marked;
         edge c_lower goto Halfway;
+        edge c_close_all goto Closed;
 end
 
 Gate1: Gate();
@@ -51,9 +63,13 @@ Gate4: Gate();
 // --- Fjord Water Level ---
 // lf in {0,1,2,3,4,5} where each unit represents 1 meter.
 // Rises due to rain inflow, falls due to gate outflow (when lf > ls and gates open).
-// Thresholds: L1 says lf must not exceed 4, L2 says lf must not fall below 1.
+// Fjord level changes are synchronized with the tidal clock (u_sea_tick).
+// On each tick, exactly one outcome occurs based on gate state (deterministic):
+//   - Raining + all gates closed => fjord rises (rain inflow, no drainage)
+//   - Gates open + lf > ls       => fjord falls (gravitational discharge)
+//   - Otherwise                  => fjord unchanged
+// The supervisor controls the outcome by choosing gate positions between ticks.
 plant fjord_level:
-    uncontrollable u_fjord_rise, u_fjord_lower;
     disc int[0..5] lf = 2;
 
     // Any gate not fully closed
@@ -65,34 +81,31 @@ plant fjord_level:
     // Water drains from fjord to sea when gates are open and fjord is higher
     alg bool draining = any_gate_open and lf > sea_level.ls;
 
-    location Normal:
+    location:
         initial; marked;
-        // Fjord rises when raining and no gate is open (eq. 2: when gates are
-        // open, water exchange prevents net accumulation)
-        edge u_fjord_rise when lf < 5 and rain.Raining and not any_gate_open do lf := lf + 1;
-        // Fjord falls when draining towards sea (eq. 2)
-        edge u_fjord_lower when lf > 0 and draining do lf := lf - 1;
+        edge sea_level.u_sea_tick when rain.Raining and not any_gate_open and lf < 5 do lf := lf + 1;
+        edge sea_level.u_sea_tick when draining and lf > 0 do lf := lf - 1;
+        edge sea_level.u_sea_tick when not (rain.Raining and not any_gate_open and lf < 5)
+                                   and not (draining and lf > 0);
 end
 
-// --- Fjord Tick ---
-// Ensures the fjord changes at most once per two sea ticks, modeling that
-// the fjord level changes much slower than the tidal cycle. This gives the
-// supervisor a guaranteed reaction window between consecutive fjord changes.
-plant fjord_tick:
-    location Idle:
+// --- Turn-Based Clock ---
+// After each u_sea_tick (which updates sea + fjord levels), the system pauses.
+// Only controllable events fire during Supervisor turn. The supervisor adjusts
+// gate positions, then issues c_react to allow the next tick.
+// Supervisor location is NOT marked: the supervisor must eventually react.
+plant turn:
+    controllable c_react;
+
+    location Environment:
         initial; marked;
-        edge fjord_level.u_fjord_rise goto WaitTick1;
-        edge fjord_level.u_fjord_lower goto WaitTick1;
-    location WaitTick1:
-        marked;
-        edge sea_level.u_sea_tick goto WaitTick2;
-    location WaitTick2:
-        marked;
-        edge sea_level.u_sea_tick goto Idle;
+        edge sea_level.u_sea_tick goto Supervisor;
+    location Supervisor:
+        edge c_react goto Environment;
 end
 
 // --- Rain ---
-// Uncontrollable environment: rain can start or stop at any time.
+// Rain changes are synchronized with the sea tick (one possible change per tick).
 plant rain:
     uncontrollable u_rain_start, u_rain_stop;
 
@@ -105,17 +118,18 @@ plant rain:
 end
 
 // --- Gate Actuation Timer ---
-// Timer starts on any gate command and expires independently.
-// Synchronized with gate commands so G3 (gate_interval) can enforce cooldown.
+// Timer starts on any gate RAISE command and expires independently.
+// Only c_raise is rate-limited; c_lower (closing) is always allowed
+// for safety-critical storm surge protection.
 plant gate_timer:
     uncontrollable u_timer_done;
 
     location Ready:
         initial; marked;
-        edge Gate1.c_raise, Gate1.c_lower,
-             Gate2.c_raise, Gate2.c_lower,
-             Gate3.c_raise, Gate3.c_lower,
-             Gate4.c_raise, Gate4.c_lower goto Cooldown;
+        edge Gate1.c_raise,
+             Gate2.c_raise,
+             Gate3.c_raise,
+             Gate4.c_raise goto Cooldown;
     location Cooldown:
         edge u_timer_done goto Ready;
 end
@@ -169,14 +183,15 @@ requirement invariant G2:
         not Gate1.Open and not Gate2.Open and not Gate3.Open and not Gate4.Open;
 
 // --- G3: Gate actuation interval (timer cooldown) ---
-// After any gate command, wait for timer to expire before next command.
+// After any gate raise, wait for timer to expire before next raise.
+// Closing (c_lower) is unrestricted for safety-critical storm protection.
 requirement gate_interval:
     location Ready:
         initial; marked;
-        edge Gate1.c_raise, Gate1.c_lower,
-             Gate2.c_raise, Gate2.c_lower,
-             Gate3.c_raise, Gate3.c_lower,
-             Gate4.c_raise, Gate4.c_lower goto Cooldown;
+        edge Gate1.c_raise,
+             Gate2.c_raise,
+             Gate3.c_raise,
+             Gate4.c_raise goto Cooldown;
     location Cooldown:
         edge gate_timer.u_timer_done goto Ready;
 end
