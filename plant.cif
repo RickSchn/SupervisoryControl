@@ -1,32 +1,52 @@
 uncontrollable u_unit_step_large, u_unit_step_medium, u_unit_step_small;
-controllable c_gate_rise, c_gate_lower;
 
 plant sea_level:
-    disc list int water_level = [0, 100, 200, 300, 400, 500, 400, 300, 200, 100];
-    disc int current_water_level;
-    disc int counter = 0;
+    disc int[0..10] ls = 0;
 
-    location:
-        initial;
+    location L0:
+        initial; marked;
+        edge u_unit_step_large do ls := 2 goto L1;
+    location L1:
         marked;
-        edge u_unit_step_large when counter < 10 do current_water_level := water_level[counter], counter := counter+1;
-        edge u_unit_step_large when counter = 10 do counter:= 1, current_water_level := water_level[0];
-
+        edge u_unit_step_large do ls := 4 goto L2;
+    location L2:
+        marked;
+        edge u_unit_step_large do ls := 6 goto L3;
+    location L3:
+        marked;
+        edge u_unit_step_large do ls := 8 goto L4;
+    location L4:
+        marked;
+        edge u_unit_step_large do ls := 10 goto L5;
+    location L5:
+        marked;
+        edge u_unit_step_large do ls := 8 goto L6;
+    location L6:
+        marked;
+        edge u_unit_step_large do ls := 6 goto L7;
+    location L7:
+        marked;
+        edge u_unit_step_large do ls := 4 goto L8;
+    location L8:
+        marked;
+        edge u_unit_step_large do ls := 2 goto L9;
+    location L9:
+        marked;
+        edge u_unit_step_large do ls := 0 goto L0;
 end
 
-
 plant def gate_actuators():
-    disc int h;
+    disc int[0..2] h = 0;
+    controllable c_gate_rise, c_gate_lower;
 
     location Idle:
-        initial;
-        marked;
-        edge c_gate_rise when h<6 goto Opening;
-        edge c_gate_lower when h>0 goto Closing;
+        initial; marked;
+        edge c_gate_rise when h < 2 goto Opening;
+        edge c_gate_lower when h > 0 goto Closing;
     location Closing:
-        edge u_unit_step_small do h:= h-3 goto Idle;
+        edge u_unit_step_small do h := h - 1 goto Idle;
     location Opening:
-        edge u_unit_step_small do h:= h+3 goto Idle;
+        edge u_unit_step_small do h := h + 1 goto Idle;
 end
 
 Gate1: gate_actuators();
@@ -36,9 +56,15 @@ Gate4: gate_actuators();
 
 plant unit_steps_check:
     location no_gates:
-        initial;
-        edge c_gate_rise goto gates;
-        edge c_gate_lower goto gates;
+        initial; marked;
+        edge Gate1.c_gate_rise goto gates;
+        edge Gate2.c_gate_rise goto gates;
+        edge Gate3.c_gate_rise goto gates;
+        edge Gate4.c_gate_rise goto gates;
+        edge Gate1.c_gate_lower goto gates;
+        edge Gate2.c_gate_lower goto gates;
+        edge Gate3.c_gate_lower goto gates;
+        edge Gate4.c_gate_lower goto gates;
 
     location gates:
         edge u_unit_step_medium goto no_gates;
@@ -53,45 +79,33 @@ plant ships:
 
     location Red:
         initial;
-        edge c_ships_green  goto Green;
+        edge c_ships_green goto Green;
 end
 
 plant fjord_water_level:
-    const int flow_coeff_gates = 8;
-    const int rain_flow = 50;
-    const int flow_max = 100;
-    const int high_flow_req = 100;
+    // PDF Eq. 4: Qi = c * hi, where c > 0 when lf > ls (drain), c < 0 when ls > lf (fill), 0 when equal
+    // PDF Eq. 2: lf_dot = (1/Af)(R(t) - sum(Qi))
+    // Positive gate_flow = fjord drains to sea; net_inflow > 0 = fjord rises
+    alg int total_open = Gate1.h + Gate2.h + Gate3.h + Gate4.h;
+    alg int ls_scaled = sea_level.ls * 5;
+    alg int direction = if lf > ls_scaled: 1 elif ls_scaled > lf: -1 else 0 end;
+    alg int gate_flow = total_open * direction;
+    alg int rain_val = if rain.Rain: 1 else 0 end;
+    alg int net_inflow = rain_val - gate_flow;
 
-    alg int total_open = (Gate1.h+Gate2.h+Gate3.h+Gate4.h);
-    alg bool sea_to_fjord = sea_level.current_water_level > fjord_water_level.lvl;
-    alg int direction_flow = if sea_to_fjord = true: 1 else -1 end;
-    alg int flow_gates = flow_coeff_gates*total_open*direction_flow;
-    alg bool flow_low = flow_gates < flow_max;
-
-
-    disc int lvl = 200;
+    disc int[0..50] lf = 20;
     location:
-    initial;
-    edge u_unit_step_large   do lvl := lvl + flow_gates + rain.current_rain_flow;
-
-
+        initial; marked;
+        edge u_unit_step_large do lf := max(0, min(50, lf + net_inflow));
 end
 
 plant rain:
-    uncontrollable u_stop_rain,u_start_rain;
-    const int rain_flow = 10;
-    disc int current_rain_flow;
+    uncontrollable u_stop_rain, u_start_rain;
 
     location Dry:
-        initial;
-        marked;
-        edge u_start_rain   do current_rain_flow := rain_flow   goto Rain;
+        initial; marked;
+        edge u_start_rain goto Rain;
     location Rain:
         marked;
-        edge u_stop_rain    do current_rain_flow := 0           goto Dry;
-
-
-
-
-
-
+        edge u_stop_rain goto Dry;
+end
