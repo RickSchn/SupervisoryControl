@@ -2,44 +2,54 @@
 import "plant.cif";
 uncontrollable u_start_gap_5s;
 
-// Sea level height boolean for requirement
-alg bool fjord_near_low  = fjord_water_level.lvl <= 1500;
+// Fjord level zones in mm.
+alg bool fjord_near_low = fjord_water_level.lvl <= 1500;
 alg bool fjord_near_high = fjord_water_level.lvl >= 3500;
 alg bool fjord_noncritical = not (fjord_near_low or fjord_near_high);
 
-// Use a real anticipation margin, not exactly 4500.
-alg bool sea_close_zone = sea_level.current_water_level >= 4500;
+// Anticipatory G1 threshold for the 10-minute sampled sea model.
+// The first sampled value before 4500 mm is 4415 mm.
+alg bool sea_close_zone = sea_level.current_water_level >= 4415;
 
-requirement def gate_opening_limits(alg int gate_id, h):
-    location:
-        initial;
-        marked;
+// Predicted next fjord level using the current plant abstraction.
+alg int fjord_next_lvl =
+    if fjord_water_level.pos_flow:
+        fjord_water_level.lvl + rain.current_rain_flow + fjord_water_level.total_open
+    elif fjord_water_level.neg_flow:
+        fjord_water_level.lvl + rain.current_rain_flow - fjord_water_level.total_open
+    else
+        fjord_water_level.lvl + rain.current_rain_flow
+    end;
 
-        edge c_gate_start!gate_id
-            when not sea_close_zone
-             and not (fjord_noncritical and h = 3);
-
-        edge c_gate_start!-gate_id;
-end
-ReqG1Gate1: gate_opening_limits(1, Gate1.h);
-ReqG1Gate2: gate_opening_limits(2, Gate2.h);
-ReqG1Gate3: gate_opening_limits(3, Gate3.h);
-ReqG1Gate4: gate_opening_limits(4, Gate4.h);
-
-requirement def req_g2_gate(alg int gate_id, h):
-
+requirement def req_g1_gate(alg int gate_id, h):
     location Ok:
         initial;
         marked;
-        edge c_gate_start!gate_id when not ((fjord_noncritical) and h = 3);
 
+        edge c_gate_start!gate_id when not sea_close_zone;
         edge c_gate_start!-gate_id;
+        edge when sea_close_zone and h > 0 goto MustClose;
 
-        edge when (fjord_noncritical) and h = 6 goto TooHigh;
+    location MustClose:
+        edge c_gate_start!-gate_id;
+        edge when h = 0 goto Ok;
+end
+
+ReqG1Gate1: req_g1_gate(1, Gate1.h);
+ReqG1Gate2: req_g1_gate(2, Gate2.h);
+ReqG1Gate3: req_g1_gate(3, Gate3.h);
+ReqG1Gate4: req_g1_gate(4, Gate4.h);
+
+requirement def req_g2_gate(alg int gate_id, h):
+    location Ok:
+        initial;
+        marked;
+        edge c_gate_start!gate_id when not (fjord_noncritical and h = 3);
+        edge c_gate_start!-gate_id;
+        edge when fjord_noncritical and h = 6 goto TooHigh;
 
     location TooHigh:
         edge c_gate_start!-gate_id;
-
         edge when (not fjord_noncritical) or h <= 3 goto Ok;
 end
 
@@ -58,8 +68,7 @@ requirement req_g3_start_interval:
         edge u_start_gap_5s goto Ready;
 end
 
-
-//Ships move when safe water levels
+// Ships may only be allowed when the current flow abstraction is low enough.
 requirement req_s1:
     location:
         initial;
@@ -67,6 +76,8 @@ requirement req_s1:
         edge ships.c_ship_allow when fjord_water_level.flow_low;
         edge ships.c_ship_wait;
 end
+
+// A waiting ship should not be postponed indefinitely.
 requirement req_s2:
     disc int[0..20] wait_steps = 0;
 
@@ -82,20 +93,17 @@ requirement req_s2:
             do wait_steps := wait_steps + 1;
 end
 
-//fjord level requirements
-alg int fjord_next_lvl =
-    fjord_water_level.lvl + fjord_water_level.flow_gates + rain.current_rain_flow;
+// Fjord level must stay within [1000, 4000] mm in the next sea step.
 requirement req_l1:
     location:
         initial;
         marked;
         edge u_sea_step when fjord_next_lvl <= 4000;
 end
+
 requirement req_l2:
     location:
         initial;
         marked;
         edge u_sea_step when fjord_next_lvl >= 1000;
 end
-
-

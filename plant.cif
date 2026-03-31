@@ -2,55 +2,375 @@ uncontrollable u_sea_step, u_gate_move_step;
 controllable event int c_gate_start;
 
 
-// plant sea_level:
-//     // Sea level in mm.
-//     // Assignment equation:
-//     //   ls(t) = 2500 - 2500 * sin(4*pi*t / 86400)
-//     //
-//     // Large step = 10 min = 600 s
-//     // Tide period = 12 h = 43200 s
-//     // Samples per period = 43200 / 600 = 72
-//     // Phase increment per sample = 360 / 72 = 5 degrees
-//     //
-//     // Smallest lookup table:
-//     // only the 17 interior quarter-wave samples for 5,10,...,85 degrees.
-//     disc list int quarter_wave_inner_mm =
-//         [228, 206, 185, 165, 144, 125, 106, 89, 73,
-//          58, 45, 33, 23, 15, 9, 4, 1];
-//
-//     // phase = 0..71 corresponds to 0,5,10,...,355 degrees
-//     disc int[0..7] phase = 0;
-//
-//     alg int current_water_level =
-//         if phase = 0 or phase = 36: 250
-//         elif phase = 2: 0
-//         elif phase = 5: 500
-//         elif phase < 1: quarter_wave_inner_mm[phase - 1]
-//         elif phase < 3: quarter_wave_inner_mm[3 - phase]
-//         elif phase < 5: 500 - quarter_wave_inner_mm[phase - 3]
-//         else 500 - quarter_wave_inner_mm[7 - phase]
-//         end;
-//
-//     location:
-//         initial;
-//         marked;
-//         edge u_sea_step
-//             do phase := if phase = 7: 0 else phase + 1 end;
-// end
-
 plant sea_level:
-    disc int[0..500] current_water_level = 0;
-    disc int[0..10] counter = 0;
+    // Sea level in mm.
+    // 10-minute sampled approximation of:
+    // ls(t) = 2500 - 2500 * sin(4*pi*t / 86400)
+    //
+    // Encoded only by location, to avoid a separate 0..5000 state variable.
+    alg int current_water_level =
+        if S0: 2500
+        elif S1: 2282
+        elif S2: 2066
+        elif S3: 1853
+        elif S4: 1645
+        elif S5: 1443
+        elif S6: 1250
+        elif S7: 1066
+        elif S8: 893
+        elif S9: 732
+        elif S10: 585
+        elif S11: 452
+        elif S12: 335
+        elif S13: 234
+        elif S14: 151
+        elif S15: 85
+        elif S16: 38
+        elif S17: 10
+        elif S18: 0
+        elif S19: 10
+        elif S20: 38
+        elif S21: 85
+        elif S22: 151
+        elif S23: 234
+        elif S24: 335
+        elif S25: 452
+        elif S26: 585
+        elif S27: 732
+        elif S28: 893
+        elif S29: 1066
+        elif S30: 1250
+        elif S31: 1443
+        elif S32: 1645
+        elif S33: 1853
+        elif S34: 2066
+        elif S35: 2282
+        elif S36: 2500
+        elif S37: 2718
+        elif S38: 2934
+        elif S39: 3147
+        elif S40: 3355
+        elif S41: 3557
+        elif S42: 3750
+        elif S43: 3934
+        elif S44: 4107
+        elif S45: 4268
+        elif S46: 4415
+        elif S47: 4548
+        elif S48: 4665
+        elif S49: 4766
+        elif S50: 4849
+        elif S51: 4915
+        elif S52: 4962
+        elif S53: 4990
+        elif S54: 5000
+        elif S55: 4990
+        elif S56: 4962
+        elif S57: 4915
+        elif S58: 4849
+        elif S59: 4766
+        elif S60: 4665
+        elif S61: 4548
+        elif S62: 4415
+        elif S63: 4268
+        elif S64: 4107
+        elif S65: 3934
+        elif S66: 3750
+        elif S67: 3557
+        elif S68: 3355
+        elif S69: 3147
+        elif S70: 2934
+        else 2718
+        end;
 
-    location:
+    location S0:
         initial;
         marked;
-        edge u_sea_step when counter < 10
-                                    do current_water_level := current_water_level+100, counter := counter+1;
+        edge u_sea_step goto S1;
 
-        edge u_sea_step when counter = 10
-                                    do counter:= 1, current_water_level := 0;
+    location S1:
+        marked;
+        edge u_sea_step goto S2;
 
+    location S2:
+        marked;
+        edge u_sea_step goto S3;
+
+    location S3:
+        marked;
+        edge u_sea_step goto S4;
+
+    location S4:
+        marked;
+        edge u_sea_step goto S5;
+
+    location S5:
+        marked;
+        edge u_sea_step goto S6;
+
+    location S6:
+        marked;
+        edge u_sea_step goto S7;
+
+    location S7:
+        marked;
+        edge u_sea_step goto S8;
+
+    location S8:
+        marked;
+        edge u_sea_step goto S9;
+
+    location S9:
+        marked;
+        edge u_sea_step goto S10;
+
+    location S10:
+        marked;
+        edge u_sea_step goto S11;
+
+    location S11:
+        marked;
+        edge u_sea_step goto S12;
+
+    location S12:
+        marked;
+        edge u_sea_step goto S13;
+
+    location S13:
+        marked;
+        edge u_sea_step goto S14;
+
+    location S14:
+        marked;
+        edge u_sea_step goto S15;
+
+    location S15:
+        marked;
+        edge u_sea_step goto S16;
+
+    location S16:
+        marked;
+        edge u_sea_step goto S17;
+
+    location S17:
+        marked;
+        edge u_sea_step goto S18;
+
+    location S18:
+        marked;
+        edge u_sea_step goto S19;
+
+    location S19:
+        marked;
+        edge u_sea_step goto S20;
+
+    location S20:
+        marked;
+        edge u_sea_step goto S21;
+
+    location S21:
+        marked;
+        edge u_sea_step goto S22;
+
+    location S22:
+        marked;
+        edge u_sea_step goto S23;
+
+    location S23:
+        marked;
+        edge u_sea_step goto S24;
+
+    location S24:
+        marked;
+        edge u_sea_step goto S25;
+
+    location S25:
+        marked;
+        edge u_sea_step goto S26;
+
+    location S26:
+        marked;
+        edge u_sea_step goto S27;
+
+    location S27:
+        marked;
+        edge u_sea_step goto S28;
+
+    location S28:
+        marked;
+        edge u_sea_step goto S29;
+
+    location S29:
+        marked;
+        edge u_sea_step goto S30;
+
+    location S30:
+        marked;
+        edge u_sea_step goto S31;
+
+    location S31:
+        marked;
+        edge u_sea_step goto S32;
+
+    location S32:
+        marked;
+        edge u_sea_step goto S33;
+
+    location S33:
+        marked;
+        edge u_sea_step goto S34;
+
+    location S34:
+        marked;
+        edge u_sea_step goto S35;
+
+    location S35:
+        marked;
+        edge u_sea_step goto S36;
+
+    location S36:
+        marked;
+        edge u_sea_step goto S37;
+
+    location S37:
+        marked;
+        edge u_sea_step goto S38;
+
+    location S38:
+        marked;
+        edge u_sea_step goto S39;
+
+    location S39:
+        marked;
+        edge u_sea_step goto S40;
+
+    location S40:
+        marked;
+        edge u_sea_step goto S41;
+
+    location S41:
+        marked;
+        edge u_sea_step goto S42;
+
+    location S42:
+        marked;
+        edge u_sea_step goto S43;
+
+    location S43:
+        marked;
+        edge u_sea_step goto S44;
+
+    location S44:
+        marked;
+        edge u_sea_step goto S45;
+
+    location S45:
+        marked;
+        edge u_sea_step goto S46;
+
+    location S46:
+        marked;
+        edge u_sea_step goto S47;
+
+    location S47:
+        marked;
+        edge u_sea_step goto S48;
+
+    location S48:
+        marked;
+        edge u_sea_step goto S49;
+
+    location S49:
+        marked;
+        edge u_sea_step goto S50;
+
+    location S50:
+        marked;
+        edge u_sea_step goto S51;
+
+    location S51:
+        marked;
+        edge u_sea_step goto S52;
+
+    location S52:
+        marked;
+        edge u_sea_step goto S53;
+
+    location S53:
+        marked;
+        edge u_sea_step goto S54;
+
+    location S54:
+        marked;
+        edge u_sea_step goto S55;
+
+    location S55:
+        marked;
+        edge u_sea_step goto S56;
+
+    location S56:
+        marked;
+        edge u_sea_step goto S57;
+
+    location S57:
+        marked;
+        edge u_sea_step goto S58;
+
+    location S58:
+        marked;
+        edge u_sea_step goto S59;
+
+    location S59:
+        marked;
+        edge u_sea_step goto S60;
+
+    location S60:
+        marked;
+        edge u_sea_step goto S61;
+
+    location S61:
+        marked;
+        edge u_sea_step goto S62;
+
+    location S62:
+        marked;
+        edge u_sea_step goto S63;
+
+    location S63:
+        marked;
+        edge u_sea_step goto S64;
+
+    location S64:
+        marked;
+        edge u_sea_step goto S65;
+
+    location S65:
+        marked;
+        edge u_sea_step goto S66;
+
+    location S66:
+        marked;
+        edge u_sea_step goto S67;
+
+    location S67:
+        marked;
+        edge u_sea_step goto S68;
+
+    location S68:
+        marked;
+        edge u_sea_step goto S69;
+
+    location S69:
+        marked;
+        edge u_sea_step goto S70;
+
+    location S70:
+        marked;
+        edge u_sea_step goto S71;
+
+    location S71:
+        marked;
+        edge u_sea_step goto S0;
 end
 
 plant def gate_actuators(alg int id_gate):
@@ -74,7 +394,6 @@ Gate2: gate_actuators(2);
 Gate3: gate_actuators(3);
 Gate4: gate_actuators(4);
 
-
 plant ships:
     uncontrollable u_ship_request;
     controllable c_ship_allow, c_ship_wait;
@@ -96,7 +415,7 @@ end
 
 plant fjord_water_level:
     const int flow_max = 100;
-     disc int[0..6000] lvl = 2000;
+    disc int[0..6000] lvl = 2000;
 
     alg bool pos_flow = sea_level.current_water_level > lvl;
     alg bool neg_flow = sea_level.current_water_level < lvl;
@@ -121,7 +440,7 @@ end
 plant rain:
     uncontrollable u_stop_rain, u_start_rain;
 
-    // Interpreted as mm added to fjord level per large step while raining.
+    // Interpreted as mm added to fjord level per sea step while raining.
     const int rain_flow = 10;
     disc int[0..10] current_rain_flow = 0;
 
@@ -134,5 +453,3 @@ plant rain:
         marked;
         edge u_stop_rain do current_rain_flow := 0 goto Dry;
 end
-
-
