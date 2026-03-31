@@ -1,0 +1,101 @@
+// Requirements
+import "plant.cif";
+uncontrollable u_start_gap_5s;
+
+// Sea level height boolean for requirement
+alg bool fjord_near_low  = fjord_water_level.lvl <= 1500;
+alg bool fjord_near_high = fjord_water_level.lvl >= 3500;
+alg bool fjord_noncritical = not (fjord_near_low or fjord_near_high);
+
+// Use a real anticipation margin, not exactly 4500.
+alg bool sea_close_zone = sea_level.current_water_level >= 4500;
+
+requirement def gate_opening_limits(alg int gate_id, h):
+    location:
+        initial;
+        marked;
+
+        edge c_gate_start!gate_id
+            when not sea_close_zone
+             and not (fjord_noncritical and h = 3);
+
+        edge c_gate_start!-gate_id;
+end
+ReqG1Gate1: gate_opening_limits(1, Gate1.h);
+ReqG1Gate2: gate_opening_limits(2, Gate2.h);
+ReqG1Gate3: gate_opening_limits(3, Gate3.h);
+ReqG1Gate4: gate_opening_limits(4, Gate4.h);
+
+requirement def req_g2_gate(alg int gate_id, h):
+
+    location Ok:
+        initial;
+        marked;
+        edge c_gate_start!gate_id when not ((fjord_noncritical) and h = 3);
+
+        edge c_gate_start!-gate_id;
+
+        edge when (fjord_noncritical) and h = 6 goto TooHigh;
+
+    location TooHigh:
+        edge c_gate_start!-gate_id;
+
+        edge when (not fjord_noncritical) or h <= 3 goto Ok;
+end
+
+ReqG2Gate1: req_g2_gate(1, Gate1.h);
+ReqG2Gate2: req_g2_gate(2, Gate2.h);
+ReqG2Gate3: req_g2_gate(3, Gate3.h);
+ReqG2Gate4: req_g2_gate(4, Gate4.h);
+
+requirement req_g3_start_interval:
+    location Ready:
+        initial;
+        marked;
+        edge c_gate_start? goto Wait;
+
+    location Wait:
+        edge u_start_gap_5s goto Ready;
+end
+
+
+//Ships move when safe water levels
+requirement req_s1:
+    location:
+        initial;
+        marked;
+        edge ships.c_ship_allow when fjord_water_level.flow_low;
+        edge ships.c_ship_wait;
+end
+requirement req_s2:
+    disc int[0..20] wait_steps = 0;
+
+    location Idle:
+        initial;
+        marked;
+        edge ships.u_ship_request do wait_steps := 0 goto Pending;
+
+    location Pending:
+        edge ships.c_ship_allow goto Idle;
+
+        edge u_sea_step when wait_steps < 20
+            do wait_steps := wait_steps + 1;
+end
+
+//fjord level requirements
+alg int fjord_next_lvl =
+    fjord_water_level.lvl + fjord_water_level.flow_gates + rain.current_rain_flow;
+requirement req_l1:
+    location:
+        initial;
+        marked;
+        edge u_sea_step when fjord_next_lvl <= 4000;
+end
+requirement req_l2:
+    location:
+        initial;
+        marked;
+        edge u_sea_step when fjord_next_lvl >= 1000;
+end
+
+
