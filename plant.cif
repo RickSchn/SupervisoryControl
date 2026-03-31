@@ -1,97 +1,138 @@
-uncontrollable u_unit_step_large, u_unit_step_medium, u_unit_step_small;
-controllable c_gate_rise, c_gate_lower;
+uncontrollable u_sea_step, u_gate_move_step;
+controllable event int c_gate_start;
+
+
+// plant sea_level:
+//     // Sea level in mm.
+//     // Assignment equation:
+//     //   ls(t) = 2500 - 2500 * sin(4*pi*t / 86400)
+//     //
+//     // Large step = 10 min = 600 s
+//     // Tide period = 12 h = 43200 s
+//     // Samples per period = 43200 / 600 = 72
+//     // Phase increment per sample = 360 / 72 = 5 degrees
+//     //
+//     // Smallest lookup table:
+//     // only the 17 interior quarter-wave samples for 5,10,...,85 degrees.
+//     disc list int quarter_wave_inner_mm =
+//         [228, 206, 185, 165, 144, 125, 106, 89, 73,
+//          58, 45, 33, 23, 15, 9, 4, 1];
+//
+//     // phase = 0..71 corresponds to 0,5,10,...,355 degrees
+//     disc int[0..7] phase = 0;
+//
+//     alg int current_water_level =
+//         if phase = 0 or phase = 36: 250
+//         elif phase = 2: 0
+//         elif phase = 5: 500
+//         elif phase < 1: quarter_wave_inner_mm[phase - 1]
+//         elif phase < 3: quarter_wave_inner_mm[3 - phase]
+//         elif phase < 5: 500 - quarter_wave_inner_mm[phase - 3]
+//         else 500 - quarter_wave_inner_mm[7 - phase]
+//         end;
+//
+//     location:
+//         initial;
+//         marked;
+//         edge u_sea_step
+//             do phase := if phase = 7: 0 else phase + 1 end;
+// end
 
 plant sea_level:
-    disc list int water_level = [0, 100, 200, 300, 400, 500, 400, 300, 200, 100];
-    disc int current_water_level;
-    disc int counter = 0;
+    disc int[0..500] current_water_level = 0;
+    disc int[0..10] counter = 0;
 
     location:
         initial;
         marked;
-        edge u_unit_step_large when counter < 10 do current_water_level := water_level[counter], counter := counter+1;
-        edge u_unit_step_large when counter = 10 do counter:= 1, current_water_level := water_level[0];
+        edge u_sea_step when counter < 10
+                                    do current_water_level := current_water_level+100, counter := counter+1;
+
+        edge u_sea_step when counter = 10
+                                    do counter:= 1, current_water_level := 0;
 
 end
 
-
-plant def gate_actuators():
-    disc int h;
+plant def gate_actuators(alg int id_gate):
+    disc int[0..6] h = 0;
 
     location Idle:
         initial;
         marked;
-        edge c_gate_rise when h<6 goto Opening;
-        edge c_gate_lower when h>0 goto Closing;
-    location Closing:
-        edge u_unit_step_small do h:= h-3 goto Idle;
-    location Opening:
-        edge u_unit_step_small do h:= h+3 goto Idle;
+        edge c_gate_start!id_gate  when h < 6 goto MovingUp;
+        edge c_gate_start!-id_gate when h > 0 goto MovingDown;
+
+    location MovingUp:
+        edge u_gate_move_step do h := h + 3 goto Idle;
+
+    location MovingDown:
+        edge u_gate_move_step do h := h - 3 goto Idle;
 end
 
-Gate1: gate_actuators();
-Gate2: gate_actuators();
-Gate3: gate_actuators();
-Gate4: gate_actuators();
+Gate1: gate_actuators(1);
+Gate2: gate_actuators(2);
+Gate3: gate_actuators(3);
+Gate4: gate_actuators(4);
 
-plant unit_steps_check:
-    location no_gates:
-        initial;
-        edge c_gate_rise goto gates;
-        edge c_gate_lower goto gates;
-
-    location gates:
-        edge u_unit_step_medium goto no_gates;
-end
 
 plant ships:
-    controllable c_ships_green, c_ships_red;
+    uncontrollable u_ship_request;
+    controllable c_ship_allow, c_ship_wait;
 
-    location Green:
-        marked;
-        edge c_ships_red goto Red;
-
-    location Red:
+    location Idle:
         initial;
-        edge c_ships_green  goto Green;
+        marked;
+        edge u_ship_request goto Waiting;
+
+    location Waiting:
+        marked;
+        edge c_ship_allow goto Passing;
+        edge c_ship_wait  goto Waiting;
+
+    location Passing:
+        marked;
+        edge u_sea_step goto Idle;
 end
 
 plant fjord_water_level:
-    const int flow_coeff_gates = 8;
-    const int rain_flow = 50;
     const int flow_max = 100;
-    const int high_flow_req = 100;
+     disc int[0..6000] lvl = 2000;
 
-    alg int total_open = (Gate1.h+Gate2.h+Gate3.h+Gate4.h);
-    alg bool sea_to_fjord = sea_level.current_water_level > fjord_water_level.lvl;
-    alg int direction_flow = if sea_to_fjord = true: 1 else -1 end;
-    alg int flow_gates = flow_coeff_gates*total_open*direction_flow;
-    alg bool flow_low = flow_gates < flow_max;
+    alg bool pos_flow = sea_level.current_water_level > lvl;
+    alg bool neg_flow = sea_level.current_water_level < lvl;
+    alg bool no_flow  = sea_level.current_water_level = lvl;
+    alg int total_open = Gate1.h + Gate2.h + Gate3.h + Gate4.h;
+    alg bool flow_low = abs(total_open) < flow_max;
+    alg int rain_flow = rain.current_rain_flow;
 
-
-    disc int lvl = 200;
     location:
-    initial;
-    edge u_unit_step_large   do lvl := lvl + flow_gates + rain.current_rain_flow;
+        initial;
+        marked;
+        edge u_sea_step when pos_flow
+            do lvl := lvl + rain_flow + total_open;
 
+        edge u_sea_step when neg_flow
+            do lvl := lvl + rain_flow - total_open;
 
+        edge u_sea_step when no_flow
+            do lvl := lvl + rain_flow;
 end
 
 plant rain:
-    uncontrollable u_stop_rain,u_start_rain;
+    uncontrollable u_stop_rain, u_start_rain;
+
+    // Interpreted as mm added to fjord level per large step while raining.
     const int rain_flow = 10;
-    disc int current_rain_flow;
+    disc int[0..10] current_rain_flow = 0;
 
     location Dry:
         initial;
         marked;
-        edge u_start_rain   do current_rain_flow := rain_flow   goto Rain;
+        edge u_start_rain do current_rain_flow := rain_flow goto Rain;
+
     location Rain:
         marked;
-        edge u_stop_rain    do current_rain_flow := 0           goto Dry;
-
-
-
-
+        edge u_stop_rain do current_rain_flow := 0 goto Dry;
+end
 
 
