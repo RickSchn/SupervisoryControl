@@ -3,6 +3,9 @@ alg bool fjord_near_high = fjord_water_level.lvl >= 3500;
 alg bool fjord_noncritical = not(fjord_near_low or fjord_near_high);
 alg bool sea_preclose_zone = sea_level.current_water_level >= 4107;
 alg bool sea_close_zone = sea_level.current_water_level >= 4415;
+alg int[0..24] ship_flow_proxy = Gate1.h + Gate2.h + Gate3.h + Gate4.h;
+alg bool ship_flow_safe = ship_flow_proxy <= 9;
+alg bool ship_allow_safe = ships.Waiting and all_gates_idle and ship_flow_safe;
 uncontrollable u_sea_step;
 uncontrollable u_g1_gap_done;
 uncontrollable u_g2_gap_done;
@@ -104,6 +107,28 @@ supervisor automaton req_no_rise_in_preclose:
     edge c_g2_rise when not sea_preclose_zone;
     edge c_g3_rise when not sea_preclose_zone;
     edge c_g4_rise when not sea_preclose_zone;
+end
+supervisor automaton req_ship_entry_safe:
+  location Ok:
+    initial;
+    marked;
+    edge c_ship_allow when ship_allow_safe;
+    edge c_ship_wait;
+end
+supervisor automaton req_no_rise_while_ship_passing:
+  location Ok:
+    initial;
+    marked;
+    edge c_g1_rise when not ships.Passing;
+    edge c_g2_rise when not ships.Passing;
+    edge c_g3_rise when not ships.Passing;
+    edge c_g4_rise when not ships.Passing;
+    edge c_g1_lower;
+    edge c_g2_lower;
+    edge c_g3_lower;
+    edge c_g4_lower;
+    edge c_ship_wait;
+    edge c_end_cycle;
 end
 plant automaton Gate1:
   disc int[0..6] h = 0;

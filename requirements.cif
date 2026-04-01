@@ -9,7 +9,6 @@ alg bool fjord_noncritical = not (fjord_near_low or fjord_near_high);
 alg bool sea_preclose_zone = sea_level.current_water_level >= 4107;
 alg bool sea_close_zone    = sea_level.current_water_level >= 4415;
 
-
 // G1a: once sea enters the pre-close zone, gates may not be at 6 m.
 requirement invariant not (sea_preclose_zone and Gate1.h = 6);
 requirement invariant not (sea_preclose_zone and Gate2.h = 6);
@@ -43,3 +42,35 @@ requirement invariant not (fjord_noncritical and Gate4.h = 6);
 // L1/L2: fjord level must stay in range.
 requirement invariant fjord_water_level.lvl <= 4000;
 requirement invariant fjord_water_level.lvl >= 1000;
+
+//S1
+alg int[0..24] ship_flow_proxy = Gate1.h + Gate2.h + Gate3.h + Gate4.h;
+alg bool ship_flow_safe = ship_flow_proxy <= 9;
+alg bool ship_allow_safe = ships.Waiting and all_gates_idle and ship_flow_safe;
+
+requirement req_ship_entry_safe:
+  location Ok:
+    initial;
+    marked;
+    edge c_ship_allow when ship_allow_safe;
+    edge c_ship_wait;
+end
+
+requirement req_no_rise_while_ship_passing:
+  location Ok:
+    initial;
+    marked;
+
+    edge c_g1_rise when not ships.Passing;
+    edge c_g2_rise when not ships.Passing;
+    edge c_g3_rise when not ships.Passing;
+    edge c_g4_rise when not ships.Passing;
+
+    edge c_g1_lower;
+    edge c_g2_lower;
+    edge c_g3_lower;
+    edge c_g4_lower;
+
+    edge c_ship_wait;
+    edge c_end_cycle;
+end
