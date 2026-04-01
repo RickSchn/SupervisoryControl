@@ -1,86 +1,172 @@
-uncontrollable u_sea_step, u_gate_move_step;
-controllable event int c_gate_start;
+uncontrollable u_sea_step,
+               u_g1_gap_done, u_g2_gap_done, u_g3_gap_done, u_g4_gap_done,
+               u_g1_move_step, u_g2_move_step, u_g3_move_step, u_g4_move_step,
+               u_ship_request, u_ship_passed,
+               u_start_rain, u_stop_rain;
+
+controllable c_g1_rise, c_g1_lower,
+             c_g2_rise, c_g2_lower,
+             c_g3_rise, c_g3_lower,
+             c_g4_rise, c_g4_lower,
+             c_ship_allow, c_ship_wait,
+             c_end_cycle;
 
 
+// Gate actuators with gate-specific 5 s completion and gate-specific move completion.
+plant def gate_actuators(event rise_evt, lower_evt, gap_evt, move_evt):
+    disc int[0..6] h = 0;
+
+    location Idle:
+        initial;
+        marked;
+        edge rise_evt  when h < 6 goto WaitUp;
+        edge lower_evt when h > 0 goto WaitDown;
+
+    location WaitUp:
+        edge gap_evt goto MovingUp;
+
+    location WaitDown:
+        edge gap_evt goto MovingDown;
+
+    location MovingUp:
+        edge move_evt do h := h + 3 goto Idle;
+
+    location MovingDown:
+        edge move_evt do h := h - 3 goto Idle;
+end
+
+Gate1: gate_actuators(c_g1_rise, c_g1_lower, u_g1_gap_done, u_g1_move_step);
+Gate2: gate_actuators(c_g2_rise, c_g2_lower, u_g2_gap_done, u_g2_move_step);
+Gate3: gate_actuators(c_g3_rise, c_g3_lower, u_g3_gap_done, u_g3_move_step);
+Gate4: gate_actuators(c_g4_rise, c_g4_lower, u_g4_gap_done, u_g4_move_step);
+
+
+// Start coordinator: after any gate start, another start is blocked until the
+// corresponding gate-specific 5 s completion event occurs.
+plant gate_start_interval:
+    location Ready:
+        initial;
+        marked;
+        edge c_g1_rise  goto G1Wait;
+        edge c_g1_lower goto G1Wait;
+        edge c_g2_rise  goto G2Wait;
+        edge c_g2_lower goto G2Wait;
+        edge c_g3_rise  goto G3Wait;
+        edge c_g3_lower goto G3Wait;
+        edge c_g4_rise  goto G4Wait;
+        edge c_g4_lower goto G4Wait;
+
+    location G1Wait:
+        edge u_g1_gap_done goto Ready;
+
+    location G2Wait:
+        edge u_g2_gap_done goto Ready;
+
+    location G3Wait:
+        edge u_g3_gap_done goto Ready;
+
+    location G4Wait:
+        edge u_g4_gap_done goto Ready;
+end
+
+
+alg bool all_gates_idle =
+    Gate1.Idle and Gate2.Idle and Gate3.Idle and Gate4.Idle;
+
+
+// Phase automaton:
+// - In Decide: controller may issue commands and gate internal progress may finish.
+// - c_end_cycle commits the decision phase once all gates are idle.
+// - In Env: the uncontrollable sea step happens exactly once, then we return to Decide.
+plant phase:
+    location Decide:
+        initial;
+        marked;
+
+        // Gate commands.
+        edge c_g1_rise;
+        edge c_g1_lower;
+        edge c_g2_rise;
+        edge c_g2_lower;
+        edge c_g3_rise;
+        edge c_g3_lower;
+        edge c_g4_rise;
+        edge c_g4_lower;
+
+        // Gate internal progress.
+        edge u_g1_gap_done;
+        edge u_g2_gap_done;
+        edge u_g3_gap_done;
+        edge u_g4_gap_done;
+        edge u_g1_move_step;
+        edge u_g2_move_step;
+        edge u_g3_move_step;
+        edge u_g4_move_step;
+
+        // Ships.
+        edge u_ship_request;
+        edge c_ship_allow;
+        edge c_ship_wait;
+        edge u_ship_passed;
+
+        // Rain may change at any time.
+        edge u_start_rain;
+        edge u_stop_rain;
+
+        // End decision phase only when all gates are idle.
+        edge c_end_cycle when all_gates_idle goto Env;
+
+    location Env:
+        marked;
+
+        // Rain may also change here.
+        edge u_start_rain;
+        edge u_stop_rain;
+
+        // Exactly one environmental sea update.
+        edge u_sea_step goto Decide;
+end
+
+
+// Coarser sea model: 36-step cycle (20-minute samples over a 12-hour tide period).
 plant sea_level:
-    // Sea level in mm.
-    // 10-minute sampled approximation of:
-    // ls(t) = 2500 - 2500 * sin(4*pi*t / 86400)
-    //
-    // Encoded only by location, to avoid a separate 0..5000 state variable.
     alg int current_water_level =
         if S0: 2500
-        elif S1: 2282
-        elif S2: 2066
-        elif S3: 1853
-        elif S4: 1645
-        elif S5: 1443
-        elif S6: 1250
-        elif S7: 1066
-        elif S8: 893
-        elif S9: 732
-        elif S10: 585
-        elif S11: 452
+        elif S1: 2066
+        elif S2: 1645
+        elif S3: 1250
+        elif S4: 893
+        elif S5: 585
+        elif S6: 335
+        elif S7: 151
+        elif S8: 38
+        elif S9: 0
+        elif S10: 38
+        elif S11: 151
         elif S12: 335
-        elif S13: 234
-        elif S14: 151
-        elif S15: 85
-        elif S16: 38
-        elif S17: 10
-        elif S18: 0
-        elif S19: 10
-        elif S20: 38
-        elif S21: 85
-        elif S22: 151
-        elif S23: 234
-        elif S24: 335
-        elif S25: 452
-        elif S26: 585
-        elif S27: 732
-        elif S28: 893
-        elif S29: 1066
-        elif S30: 1250
-        elif S31: 1443
-        elif S32: 1645
-        elif S33: 1853
-        elif S34: 2066
-        elif S35: 2282
-        elif S36: 2500
-        elif S37: 2718
-        elif S38: 2934
-        elif S39: 3147
-        elif S40: 3355
-        elif S41: 3557
-        elif S42: 3750
-        elif S43: 3934
-        elif S44: 4107
-        elif S45: 4268
-        elif S46: 4415
-        elif S47: 4548
-        elif S48: 4665
-        elif S49: 4766
-        elif S50: 4849
-        elif S51: 4915
-        elif S52: 4962
-        elif S53: 4990
-        elif S54: 5000
-        elif S55: 4990
-        elif S56: 4962
-        elif S57: 4915
-        elif S58: 4849
-        elif S59: 4766
-        elif S60: 4665
-        elif S61: 4548
-        elif S62: 4415
-        elif S63: 4268
-        elif S64: 4107
-        elif S65: 3934
-        elif S66: 3750
-        elif S67: 3557
-        elif S68: 3355
-        elif S69: 3147
-        elif S70: 2934
-        else 2718
+        elif S13: 585
+        elif S14: 893
+        elif S15: 1250
+        elif S16: 1645
+        elif S17: 2066
+        elif S18: 2500
+        elif S19: 2934
+        elif S20: 3355
+        elif S21: 3750
+        elif S22: 4107
+        elif S23: 4415
+        elif S24: 4665
+        elif S25: 4849
+        elif S26: 4962
+        elif S27: 5000
+        elif S28: 4962
+        elif S29: 4849
+        elif S30: 4665
+        elif S31: 4415
+        elif S32: 4107
+        elif S33: 3750
+        elif S34: 3355
+        else 2934
         end;
 
     location S0:
@@ -226,178 +312,11 @@ plant sea_level:
 
     location S35:
         marked;
-        edge u_sea_step goto S36;
-
-    location S36:
-        marked;
-        edge u_sea_step goto S37;
-
-    location S37:
-        marked;
-        edge u_sea_step goto S38;
-
-    location S38:
-        marked;
-        edge u_sea_step goto S39;
-
-    location S39:
-        marked;
-        edge u_sea_step goto S40;
-
-    location S40:
-        marked;
-        edge u_sea_step goto S41;
-
-    location S41:
-        marked;
-        edge u_sea_step goto S42;
-
-    location S42:
-        marked;
-        edge u_sea_step goto S43;
-
-    location S43:
-        marked;
-        edge u_sea_step goto S44;
-
-    location S44:
-        marked;
-        edge u_sea_step goto S45;
-
-    location S45:
-        marked;
-        edge u_sea_step goto S46;
-
-    location S46:
-        marked;
-        edge u_sea_step goto S47;
-
-    location S47:
-        marked;
-        edge u_sea_step goto S48;
-
-    location S48:
-        marked;
-        edge u_sea_step goto S49;
-
-    location S49:
-        marked;
-        edge u_sea_step goto S50;
-
-    location S50:
-        marked;
-        edge u_sea_step goto S51;
-
-    location S51:
-        marked;
-        edge u_sea_step goto S52;
-
-    location S52:
-        marked;
-        edge u_sea_step goto S53;
-
-    location S53:
-        marked;
-        edge u_sea_step goto S54;
-
-    location S54:
-        marked;
-        edge u_sea_step goto S55;
-
-    location S55:
-        marked;
-        edge u_sea_step goto S56;
-
-    location S56:
-        marked;
-        edge u_sea_step goto S57;
-
-    location S57:
-        marked;
-        edge u_sea_step goto S58;
-
-    location S58:
-        marked;
-        edge u_sea_step goto S59;
-
-    location S59:
-        marked;
-        edge u_sea_step goto S60;
-
-    location S60:
-        marked;
-        edge u_sea_step goto S61;
-
-    location S61:
-        marked;
-        edge u_sea_step goto S62;
-
-    location S62:
-        marked;
-        edge u_sea_step goto S63;
-
-    location S63:
-        marked;
-        edge u_sea_step goto S64;
-
-    location S64:
-        marked;
-        edge u_sea_step goto S65;
-
-    location S65:
-        marked;
-        edge u_sea_step goto S66;
-
-    location S66:
-        marked;
-        edge u_sea_step goto S67;
-
-    location S67:
-        marked;
-        edge u_sea_step goto S68;
-
-    location S68:
-        marked;
-        edge u_sea_step goto S69;
-
-    location S69:
-        marked;
-        edge u_sea_step goto S70;
-
-    location S70:
-        marked;
-        edge u_sea_step goto S71;
-
-    location S71:
-        marked;
         edge u_sea_step goto S0;
 end
 
-plant def gate_actuators(alg int id_gate):
-    disc int[0..6] h = 0;
-
-    location Idle:
-        initial;
-        marked;
-        edge c_gate_start!id_gate  when h < 6 goto MovingUp;
-        edge c_gate_start!-id_gate when h > 0 goto MovingDown;
-
-    location MovingUp:
-        edge u_gate_move_step do h := h + 3 goto Idle;
-
-    location MovingDown:
-        edge u_gate_move_step do h := h - 3 goto Idle;
-end
-
-Gate1: gate_actuators(1);
-Gate2: gate_actuators(2);
-Gate3: gate_actuators(3);
-Gate4: gate_actuators(4);
 
 plant ships:
-    uncontrollable u_ship_request;
-    controllable c_ship_allow, c_ship_wait;
-
     location Idle:
         initial;
         marked;
@@ -406,41 +325,15 @@ plant ships:
     location Waiting:
         marked;
         edge c_ship_allow goto Passing;
-        edge c_ship_wait  goto Waiting;
+        edge c_ship_wait;
 
     location Passing:
         marked;
-        edge u_sea_step goto Idle;
+        edge u_ship_passed goto Idle;
 end
 
-plant fjord_water_level:
-    const int flow_max = 100;
-    disc int[0..6000] lvl = 2000;
-
-    alg bool pos_flow = sea_level.current_water_level > lvl;
-    alg bool neg_flow = sea_level.current_water_level < lvl;
-    alg bool no_flow  = sea_level.current_water_level = lvl;
-    alg int total_open = Gate1.h + Gate2.h + Gate3.h + Gate4.h;
-    alg bool flow_low = abs(total_open) < flow_max;
-    alg int rain_flow = rain.current_rain_flow;
-
-    location:
-        initial;
-        marked;
-        edge u_sea_step when pos_flow
-            do lvl := lvl + rain_flow + total_open;
-
-        edge u_sea_step when neg_flow
-            do lvl := lvl + rain_flow - total_open;
-
-        edge u_sea_step when no_flow
-            do lvl := lvl + rain_flow;
-end
 
 plant rain:
-    uncontrollable u_stop_rain, u_start_rain;
-
-    // Interpreted as mm added to fjord level per sea step while raining.
     const int rain_flow = 10;
     disc int[0..10] current_rain_flow = 0;
 
@@ -452,4 +345,28 @@ plant rain:
     location Rain:
         marked;
         edge u_stop_rain do current_rain_flow := 0 goto Dry;
+end
+
+
+plant fjord_water_level:
+    disc int[0..6000] lvl = 2000;
+
+    alg bool pos_flow = sea_level.current_water_level > lvl;
+    alg bool neg_flow = sea_level.current_water_level < lvl;
+    alg bool no_flow  = sea_level.current_water_level = lvl;
+    alg int total_open = Gate1.h + Gate2.h + Gate3.h + Gate4.h;
+    alg int rain_flow = rain.current_rain_flow;
+
+    location:
+        initial;
+        marked;
+
+        edge u_sea_step when pos_flow
+            do lvl := lvl + rain_flow + total_open;
+
+        edge u_sea_step when neg_flow
+            do lvl := lvl + rain_flow - total_open;
+
+        edge u_sea_step when no_flow
+            do lvl := lvl + rain_flow;
 end
