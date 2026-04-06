@@ -1,341 +1,303 @@
-uncontrollable u_sea_step,
-               u_g1_gap_done, u_g2_gap_done, u_g3_gap_done, u_g4_gap_done,
-               u_g1_move_step, u_g2_move_step, u_g3_move_step, u_g4_move_step,
-               u_ship_request, u_ship_passed,
+uncontrollable u_sea_step, u_gate_step,
                u_start_rain, u_stop_rain;
 
-controllable c_g1_rise, c_g1_lower,
-             c_g2_rise, c_g2_lower,
-             c_g3_rise, c_g3_lower,
-             c_g4_rise, c_g4_lower,
-             c_ship_allow, c_ship_wait,
-             c_end_cycle;
+controllable c_ship_green, c_ship_red, c_end_cycle;
 
 
-// Gate actuators with gate-specific 5 s completion and gate-specific move completion.
-plant def gate_actuators(event rise_evt, lower_evt, gap_evt, move_evt):
-    disc int[0..6] h = 0;
+// must work both ways when not near critical.
+plant def gate_actuators():
+    disc int[0..2] h = 0;
+    controllable c_gate_rise, c_gate_lower;
 
     location Idle:
-        initial;
-        marked;
-        edge rise_evt  when h < 6 goto WaitUp;
-        edge lower_evt when h > 0 goto WaitDown;
-
-    location WaitUp:
-        edge gap_evt goto MovingUp;
-
-    location WaitDown:
-        edge gap_evt goto MovingDown;
-
-    location MovingUp:
-        edge move_evt do h := h + 3 goto Idle;
-
-    location MovingDown:
-        edge move_evt do h := h - 3 goto Idle;
+        initial; marked;
+        edge c_gate_rise when h < 2 goto Opening;
+        edge c_gate_lower when h > 0 goto Closing;
+        edge u_sea_step;
+    location Closing:
+        edge u_gate_step do h := h - 1 goto Moving;
+    location Opening:
+        edge u_gate_step do h := h + 1 goto Moving;
+    location Moving:
+        edge u_sea_step goto Idle;
 end
 
-Gate1: gate_actuators(c_g1_rise, c_g1_lower, u_g1_gap_done, u_g1_move_step);
-Gate2: gate_actuators(c_g2_rise, c_g2_lower, u_g2_gap_done, u_g2_move_step);
-Gate3: gate_actuators(c_g3_rise, c_g3_lower, u_g3_gap_done, u_g3_move_step);
-Gate4: gate_actuators(c_g4_rise, c_g4_lower, u_g4_gap_done, u_g4_move_step);
-
-
-// Start coordinator: after any gate start, another start is blocked until the
-// corresponding gate-specific 5 s completion event occurs.
-plant gate_start_interval:
-    location Ready:
-        initial;
-        marked;
-        edge c_g1_rise  goto G1Wait;
-        edge c_g1_lower goto G1Wait;
-        edge c_g2_rise  goto G2Wait;
-        edge c_g2_lower goto G2Wait;
-        edge c_g3_rise  goto G3Wait;
-        edge c_g3_lower goto G3Wait;
-        edge c_g4_rise  goto G4Wait;
-        edge c_g4_lower goto G4Wait;
-
-    location G1Wait:
-        edge u_g1_gap_done goto Ready;
-
-    location G2Wait:
-        edge u_g2_gap_done goto Ready;
-
-    location G3Wait:
-        edge u_g3_gap_done goto Ready;
-
-    location G4Wait:
-        edge u_g4_gap_done goto Ready;
-end
-
+Gate1: gate_actuators();
+Gate2: gate_actuators();
+Gate3: gate_actuators();
+Gate4: gate_actuators();
 
 alg bool all_gates_idle =
     Gate1.Idle and Gate2.Idle and Gate3.Idle and Gate4.Idle;
-
-
-// Phase automaton:
-// - In Decide: controller may issue commands and gate internal progress may finish.
-// - c_end_cycle commits the decision phase once all gates are idle.
-// - In Env: the uncontrollable sea step happens exactly once, then we return to Decide.
-plant phase:
-    location Decide:
-        initial;
-        marked;
-
-        // Gate commands.
-        edge c_g1_rise;
-        edge c_g1_lower;
-        edge c_g2_rise;
-        edge c_g2_lower;
-        edge c_g3_rise;
-        edge c_g3_lower;
-        edge c_g4_rise;
-        edge c_g4_lower;
-
-        // Gate internal progress.
-        edge u_g1_gap_done;
-        edge u_g2_gap_done;
-        edge u_g3_gap_done;
-        edge u_g4_gap_done;
-        edge u_g1_move_step;
-        edge u_g2_move_step;
-        edge u_g3_move_step;
-        edge u_g4_move_step;
-
-        // Ships.
-        edge u_ship_request;
-        edge c_ship_allow;
-        edge c_ship_wait;
-        edge u_ship_passed;
-
-        // Rain may change at any time.
-        edge u_start_rain;
-        edge u_stop_rain;
-
-        // End decision phase only when all gates are idle.
-        edge c_end_cycle when all_gates_idle goto Env;
-
-    location Env:
-        marked;
-
-        // Rain may also change here.
-        edge u_start_rain;
-        edge u_stop_rain;
-
-        // Exactly one environmental sea update.
-        edge u_sea_step goto Decide;
-end
-
-
-// Coarser sea model: 36-step cycle (20-minute samples over a 12-hour tide period).
 plant sea_level:
+    disc int[0..239] k = 0;
+
     alg int current_water_level =
-        if S0: 2500
-        elif S1: 2066
-        elif S2: 1645
-        elif S3: 1250
-        elif S4: 893
-        elif S5: 585
-        elif S6: 335
-        elif S7: 151
-        elif S8: 38
-        elif S9: 0
-        elif S10: 38
-        elif S11: 151
-        elif S12: 335
-        elif S13: 585
-        elif S14: 893
-        elif S15: 1250
-        elif S16: 1645
-        elif S17: 2066
-        elif S18: 2500
-        elif S19: 2934
-        elif S20: 3355
-        elif S21: 3750
-        elif S22: 4107
-        elif S23: 4415
-        elif S24: 4665
-        elif S25: 4849
-        elif S26: 4962
-        elif S27: 5000
-        elif S28: 4962
-        elif S29: 4849
-        elif S30: 4665
-        elif S31: 4415
-        elif S32: 4107
-        elif S33: 3750
-        elif S34: 3355
-        else 2934
+        switch k:
+            case 0: 2500
+            case 1: 2435
+            case 2: 2369
+            case 3: 2304
+            case 4: 2239
+            case 5: 2174
+            case 6: 2109
+            case 7: 2044
+            case 8: 1980
+            case 9: 1916
+            case 10: 1853
+            case 11: 1790
+            case 12: 1727
+            case 13: 1665
+            case 14: 1604
+            case 15: 1543
+            case 16: 1483
+            case 17: 1424
+            case 18: 1365
+            case 19: 1307
+            case 20: 1250
+            case 21: 1194
+            case 22: 1138
+            case 23: 1084
+            case 24: 1031
+            case 25: 978
+            case 26: 927
+            case 27: 876
+            case 28: 827
+            case 29: 779
+            case 30: 732
+            case 31: 687
+            case 32: 642
+            case 33: 599
+            case 34: 557
+            case 35: 517
+            case 36: 477
+            case 37: 440
+            case 38: 403
+            case 39: 368
+            case 40: 335
+            case 41: 303
+            case 42: 272
+            case 43: 244
+            case 44: 216
+            case 45: 190
+            case 46: 166
+            case 47: 143
+            case 48: 122
+            case 49: 103
+            case 50: 85
+            case 51: 69
+            case 52: 55
+            case 53: 42
+            case 54: 31
+            case 55: 21
+            case 56: 14
+            case 57: 8
+            case 58: 3
+            case 59: 1
+            case 60: 0
+            case 61: 1
+            case 62: 3
+            case 63: 8
+            case 64: 14
+            case 65: 21
+            case 66: 31
+            case 67: 42
+            case 68: 55
+            case 69: 69
+            case 70: 85
+            case 71: 103
+            case 72: 122
+            case 73: 143
+            case 74: 166
+            case 75: 190
+            case 76: 216
+            case 77: 244
+            case 78: 272
+            case 79: 303
+            case 80: 335
+            case 81: 368
+            case 82: 403
+            case 83: 440
+            case 84: 477
+            case 85: 517
+            case 86: 557
+            case 87: 599
+            case 88: 642
+            case 89: 687
+            case 90: 732
+            case 91: 779
+            case 92: 827
+            case 93: 876
+            case 94: 927
+            case 95: 978
+            case 96: 1031
+            case 97: 1084
+            case 98: 1138
+            case 99: 1194
+            case 100: 1250
+            case 101: 1307
+            case 102: 1365
+            case 103: 1424
+            case 104: 1483
+            case 105: 1543
+            case 106: 1604
+            case 107: 1665
+            case 108: 1727
+            case 109: 1790
+            case 110: 1853
+            case 111: 1916
+            case 112: 1980
+            case 113: 2044
+            case 114: 2109
+            case 115: 2174
+            case 116: 2239
+            case 117: 2304
+            case 118: 2369
+            case 119: 2435
+            case 120: 2500
+            case 121: 2565
+            case 122: 2631
+            case 123: 2696
+            case 124: 2761
+            case 125: 2826
+            case 126: 2891
+            case 127: 2956
+            case 128: 3020
+            case 129: 3084
+            case 130: 3147
+            case 131: 3210
+            case 132: 3273
+            case 133: 3335
+            case 134: 3396
+            case 135: 3457
+            case 136: 3517
+            case 137: 3576
+            case 138: 3635
+            case 139: 3693
+            case 140: 3750
+            case 141: 3806
+            case 142: 3862
+            case 143: 3916
+            case 144: 3969
+            case 145: 4022
+            case 146: 4073
+            case 147: 4124
+            case 148: 4173
+            case 149: 4221
+            case 150: 4268
+            case 151: 4313
+            case 152: 4358
+            case 153: 4401
+            case 154: 4443
+            case 155: 4483
+            case 156: 4523
+            case 157: 4560
+            case 158: 4597
+            case 159: 4632
+            case 160: 4665
+            case 161: 4697
+            case 162: 4728
+            case 163: 4756
+            case 164: 4784
+            case 165: 4810
+            case 166: 4834
+            case 167: 4857
+            case 168: 4878
+            case 169: 4897
+            case 170: 4915
+            case 171: 4931
+            case 172: 4945
+            case 173: 4958
+            case 174: 4969
+            case 175: 4979
+            case 176: 4986
+            case 177: 4992
+            case 178: 4997
+            case 179: 4999
+            case 180: 5000
+            case 181: 4999
+            case 182: 4997
+            case 183: 4992
+            case 184: 4986
+            case 185: 4979
+            case 186: 4969
+            case 187: 4958
+            case 188: 4945
+            case 189: 4931
+            case 190: 4915
+            case 191: 4897
+            case 192: 4878
+            case 193: 4857
+            case 194: 4834
+            case 195: 4810
+            case 196: 4784
+            case 197: 4756
+            case 198: 4728
+            case 199: 4697
+            case 200: 4665
+            case 201: 4632
+            case 202: 4597
+            case 203: 4560
+            case 204: 4523
+            case 205: 4483
+            case 206: 4443
+            case 207: 4401
+            case 208: 4358
+            case 209: 4313
+            case 210: 4268
+            case 211: 4221
+            case 212: 4173
+            case 213: 4124
+            case 214: 4073
+            case 215: 4022
+            case 216: 3969
+            case 217: 3916
+            case 218: 3862
+            case 219: 3806
+            case 220: 3750
+            case 221: 3693
+            case 222: 3635
+            case 223: 3576
+            case 224: 3517
+            case 225: 3457
+            case 226: 3396
+            case 227: 3335
+            case 228: 3273
+            case 229: 3210
+            case 230: 3147
+            case 231: 3084
+            case 232: 3020
+            case 233: 2956
+            case 234: 2891
+            case 235: 2826
+            case 236: 2761
+            case 237: 2696
+            case 238: 2631
+            else 2565
         end;
 
-    location S0:
+    location:
         initial;
         marked;
-        edge u_sea_step goto S1;
+        edge u_sea_step do
+            k := (k + 1) mod 240;
+end
 
-    location S1:
-        marked;
-        edge u_sea_step goto S2;
+plant ships: // Maybe change to requests, not necessary
 
-    location S2:
-        marked;
-        edge u_sea_step goto S3;
+    location red:
+        initial;
+        edge c_ship_green goto green;
 
-    location S3:
+    location green:
         marked;
-        edge u_sea_step goto S4;
-
-    location S4:
-        marked;
-        edge u_sea_step goto S5;
-
-    location S5:
-        marked;
-        edge u_sea_step goto S6;
-
-    location S6:
-        marked;
-        edge u_sea_step goto S7;
-
-    location S7:
-        marked;
-        edge u_sea_step goto S8;
-
-    location S8:
-        marked;
-        edge u_sea_step goto S9;
-
-    location S9:
-        marked;
-        edge u_sea_step goto S10;
-
-    location S10:
-        marked;
-        edge u_sea_step goto S11;
-
-    location S11:
-        marked;
-        edge u_sea_step goto S12;
-
-    location S12:
-        marked;
-        edge u_sea_step goto S13;
-
-    location S13:
-        marked;
-        edge u_sea_step goto S14;
-
-    location S14:
-        marked;
-        edge u_sea_step goto S15;
-
-    location S15:
-        marked;
-        edge u_sea_step goto S16;
-
-    location S16:
-        marked;
-        edge u_sea_step goto S17;
-
-    location S17:
-        marked;
-        edge u_sea_step goto S18;
-
-    location S18:
-        marked;
-        edge u_sea_step goto S19;
-
-    location S19:
-        marked;
-        edge u_sea_step goto S20;
-
-    location S20:
-        marked;
-        edge u_sea_step goto S21;
-
-    location S21:
-        marked;
-        edge u_sea_step goto S22;
-
-    location S22:
-        marked;
-        edge u_sea_step goto S23;
-
-    location S23:
-        marked;
-        edge u_sea_step goto S24;
-
-    location S24:
-        marked;
-        edge u_sea_step goto S25;
-
-    location S25:
-        marked;
-        edge u_sea_step goto S26;
-
-    location S26:
-        marked;
-        edge u_sea_step goto S27;
-
-    location S27:
-        marked;
-        edge u_sea_step goto S28;
-
-    location S28:
-        marked;
-        edge u_sea_step goto S29;
-
-    location S29:
-        marked;
-        edge u_sea_step goto S30;
-
-    location S30:
-        marked;
-        edge u_sea_step goto S31;
-
-    location S31:
-        marked;
-        edge u_sea_step goto S32;
-
-    location S32:
-        marked;
-        edge u_sea_step goto S33;
-
-    location S33:
-        marked;
-        edge u_sea_step goto S34;
-
-    location S34:
-        marked;
-        edge u_sea_step goto S35;
-
-    location S35:
-        marked;
-        edge u_sea_step goto S0;
+        edge c_ship_red goto red;
 end
 
 
-plant ships:
-    location Idle:
-        initial;
-        marked;
-        edge u_ship_request goto Waiting;
-
-    location Waiting:
-        marked;
-        edge c_ship_allow goto Passing;
-        edge c_ship_wait;
-
-    location Passing:
-        marked;
-        edge u_ship_passed goto Idle;
-end
-
-
-plant rain:
+plant rain: //increase to high levels
     const int rain_flow = 10;
-    disc int[0..10] current_rain_flow = 0;
+    disc int[0..100] current_rain_flow = 0;
 
     location Dry:
         initial;
@@ -351,10 +313,12 @@ end
 plant fjord_water_level:
     disc int[0..6000] lvl = 2000;
 
+    const int gate_coeff = 20; // mm omzet naar m^3/s
     alg bool pos_flow = sea_level.current_water_level > lvl;
     alg bool neg_flow = sea_level.current_water_level < lvl;
     alg bool no_flow  = sea_level.current_water_level = lvl;
     alg int total_open = Gate1.h + Gate2.h + Gate3.h + Gate4.h;
+    alg int gate_flow = total_open * gate_coeff;
     alg int rain_flow = rain.current_rain_flow;
 
     location:
@@ -362,11 +326,54 @@ plant fjord_water_level:
         marked;
 
         edge u_sea_step when pos_flow
-            do lvl := lvl + rain_flow + total_open;
+            do lvl := lvl + rain_flow + gate_flow;
 
         edge u_sea_step when neg_flow
-            do lvl := lvl + rain_flow - total_open;
+            do lvl := lvl + rain_flow - gate_flow;
 
         edge u_sea_step when no_flow
             do lvl := lvl + rain_flow;
 end
+
+alg bool no_gate_start_pending =
+    not (Gate1.Opening or Gate1.Closing or
+         Gate2.Opening or Gate2.Closing or
+         Gate3.Opening or Gate3.Closing or
+         Gate4.Opening or Gate4.Closing);
+
+plant phase:
+    location Decide:
+        marked;
+        initial;
+
+        // Controllable commands.
+        edge Gate1.c_gate_rise;
+        edge Gate1.c_gate_lower;
+        edge Gate2.c_gate_rise;
+        edge Gate2.c_gate_lower;
+        edge Gate3.c_gate_rise;
+        edge Gate3.c_gate_lower;
+        edge Gate4.c_gate_rise;
+        edge Gate4.c_gate_lower;
+        edge c_ship_green;
+        edge c_ship_red;
+
+        // Uncontrollable events that may still happen during the decision phase.
+        edge u_gate_step;
+        edge u_start_rain;
+        edge u_stop_rain;
+
+        // End the decision phase once no gate is still waiting for its 5 s start step.
+        edge c_end_cycle when no_gate_start_pending goto Env;
+
+    location Env:
+        marked;
+
+        // Rain may also change here.
+        edge u_start_rain;
+        edge u_stop_rain;
+
+        // One 3-minute environmental step, then back to decisions.
+        edge u_sea_step goto Decide;
+end
+

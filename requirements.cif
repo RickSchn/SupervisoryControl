@@ -1,76 +1,123 @@
 import "plant.cif";
 
+
+// -----------------------------------------------------------------------------
+// Assumptions for the current plant interface
+// - Gate height abstraction: h = 0,1,2 corresponds to 0 m, 3 m, 6 m opening.
+// - Ship sign abstraction: ships.red = ships must wait, ships.green = ships may enter.
+// - G3 interpretation for this abstraction: one uncontrollable u_gate_step models
+//   the required 5 s separation between two gate-actuation starts.
+// -----------------------------------------------------------------------------
+
 // Fjord level zones in mm.
 alg bool fjord_near_low  = fjord_water_level.lvl <= 1500;
 alg bool fjord_near_high = fjord_water_level.lvl >= 3500;
 alg bool fjord_noncritical = not (fjord_near_low or fjord_near_high);
 
-// Two-threshold G1 for the coarser 36-step sea model.
-alg bool sea_preclose_zone = sea_level.current_water_level >= 4107;
-alg bool sea_close_zone    = sea_level.current_water_level >= 4415;
+// Sea thresholds in mm for the current 240-step abstraction.
+// G1 itself is "above 4.5 m" -> strictly greater than 4500 mm.
+alg bool sea_close_zone = sea_level.current_water_level > 4500;
 
-// G1a: once sea enters the pre-close zone, gates may not be at 6 m.
-requirement invariant not (sea_preclose_zone and Gate1.h = 6);
-requirement invariant not (sea_preclose_zone and Gate2.h = 6);
-requirement invariant not (sea_preclose_zone and Gate3.h = 6);
-requirement invariant not (sea_preclose_zone and Gate4.h = 6);
+// Conservative pre-close zone: two sea samples before the first value > 4500.
+alg bool sea_preclose_zone = sea_level.current_water_level >= 4443;
 
-// G1b: once sea enters the pre-close zone, no new rise commands are allowed.
-requirement req_no_rise_in_preclose:
-    location Ok:
-        initial;
-        marked;
+// Ship-safety condition from S1.
+alg bool ship_flow_safe = abs(fjord_water_level.gate_flow) <= 100;
 
-        edge c_g1_rise when not sea_preclose_zone;
-        edge c_g2_rise when not sea_preclose_zone;
-        edge c_g3_rise when not sea_preclose_zone;
-        edge c_g4_rise when not sea_preclose_zone;
-end
+// -----------------------------------------------------------------------------
+// G1: Gates must close when sea water level is above 4.5 m.
+// Conservative pre-close restriction added for the coarse abstraction.
+// -----------------------------------------------------------------------------
 
-// G1c: once sea enters the actual close zone, all gates must be closed.
+// Redundant due to new time step size for half gate actuation.
+// requirement invariant not (sea_preclose_zone and Gate1.h = 2);
+// requirement invariant not (sea_preclose_zone and Gate2.h = 2);
+// requirement invariant not (sea_preclose_zone and Gate3.h = 2);
+// requirement invariant not (sea_preclose_zone and Gate4.h = 2);
+
 requirement invariant not (sea_close_zone and Gate1.h > 0);
 requirement invariant not (sea_close_zone and Gate2.h > 0);
 requirement invariant not (sea_close_zone and Gate3.h > 0);
 requirement invariant not (sea_close_zone and Gate4.h > 0);
 
-// G2: when fjord is noncritical, a gate may not be at 6 m.
-requirement invariant not (fjord_noncritical and Gate1.h = 6);
-requirement invariant not (fjord_noncritical and Gate2.h = 6);
-requirement invariant not (fjord_noncritical and Gate3.h = 6);
-requirement invariant not (fjord_noncritical and Gate4.h = 6);
+requirement req_no_rise_in_preclose:
+    location Ok:
+        initial;
+        marked;
 
-// L1/L2: fjord level must stay in range.
+        edge Gate1.c_gate_rise when not sea_preclose_zone;
+        edge Gate2.c_gate_rise when not sea_preclose_zone;
+        edge Gate3.c_gate_rise when not sea_preclose_zone;
+        edge Gate4.c_gate_rise when not sea_preclose_zone;
+end
+
+// -----------------------------------------------------------------------------
+// G2: At most intermediary height when fjord level is noncritical.
+// In the 0/1/2 abstraction, intermediary height is h = 1.
+// -----------------------------------------------------------------------------
+
+requirement invariant not (fjord_noncritical and Gate1.h > 1);
+requirement invariant not (fjord_noncritical and Gate2.h > 1);
+requirement invariant not (fjord_noncritical and Gate3.h > 1);
+requirement invariant not (fjord_noncritical and Gate4.h > 1);
+
+// -----------------------------------------------------------------------------
+// G3: 5 s interval between gate-actuation starts.
+// Modeled here by requiring one uncontrollable u_gate_step between any two
+// controllable start events (rise/lower).
+// -----------------------------------------------------------------------------
+
+requirement gate_start_interval:
+    location Ready:
+        initial;
+        marked;
+
+        edge Gate1.c_gate_rise  goto Wait;
+        edge Gate1.c_gate_lower goto Wait;
+        edge Gate2.c_gate_rise  goto Wait;
+        edge Gate2.c_gate_lower goto Wait;
+        edge Gate3.c_gate_rise  goto Wait;
+        edge Gate3.c_gate_lower goto Wait;
+        edge Gate4.c_gate_rise  goto Wait;
+        edge Gate4.c_gate_lower goto Wait;
+
+        edge u_sea_step;
+        edge u_start_rain;
+        edge u_stop_rain;
+        edge c_ship_green;
+        edge c_ship_red;
+
+    location Wait:
+        marked;
+
+        edge u_gate_step goto Ready;
+
+        edge u_start_rain;
+        edge u_stop_rain;
+        edge c_ship_green;
+        edge c_ship_red;
+end
+
+// -----------------------------------------------------------------------------
+// L1/L2: Fjord level bounds.
+// -----------------------------------------------------------------------------
+
 requirement invariant fjord_water_level.lvl <= 4000;
 requirement invariant fjord_water_level.lvl >= 1000;
 
-//S1
-alg int[0..24] ship_flow_proxy = Gate1.h + Gate2.h + Gate3.h + Gate4.h;
-alg bool ship_flow_safe = ship_flow_proxy <= 9;
-alg bool ship_allow_safe = ships.Waiting and all_gates_idle and ship_flow_safe;
+// -----------------------------------------------------------------------------
+// S1: Ships may only be allowed when the generated flow is small enough.
+// With the current plant, this is modeled by constraining the sign.
+// -----------------------------------------------------------------------------
 
-requirement req_ship_entry_safe:
-  location Ok:
-    initial;
-    marked;
-    edge c_ship_allow when ship_allow_safe;
-    edge c_ship_wait;
-end
+//requirement invariant not (ships.green and not ship_flow_safe);
+requirement c_ship_green needs ship_flow_safe;
+// -----------------------------------------------------------------------------
+// S2 is still not formalized here.
+// Reason: with only a red/green sign state and no ship request / waiting notion,
+// "allowed once in a while" is not a well-posed supervisory requirement.
+// It can be discussed in the report as a plant-model assumption/limitation.
+// -----------------------------------------------------------------------------
 
-requirement req_no_rise_while_ship_passing:
-  location Ok:
-    initial;
-    marked;
 
-    edge c_g1_rise when not ships.Passing;
-    edge c_g2_rise when not ships.Passing;
-    edge c_g3_rise when not ships.Passing;
-    edge c_g4_rise when not ships.Passing;
 
-    edge c_g1_lower;
-    edge c_g2_lower;
-    edge c_g3_lower;
-    edge c_g4_lower;
-
-    edge c_ship_wait;
-    edge c_end_cycle;
-end
