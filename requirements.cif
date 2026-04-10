@@ -14,6 +14,74 @@ alg bool fjord_near_low  = fjord_water_level.lvl <= 1500;
 alg bool fjord_near_high = fjord_water_level.lvl >= 3500;
 alg bool fjord_noncritical = not (fjord_near_low or fjord_near_high);
 
+
+// ------------------------------------------------------------------
+alg bool sea_rising  = sea_level.k >= 60 and sea_level.k < 180;
+alg bool sea_falling = not sea_rising;
+alg bool sea_can_refill_fjord = sea_level.current_water_level >= fjord_water_level.lvl;
+alg bool sea_can_drain_fjord  = sea_level.current_water_level <= fjord_water_level.lvl;
+
+alg bool low_close_regime  =
+    fjord_near_low and (sea_falling or not sea_can_refill_fjord);
+
+alg bool high_close_regime =
+    fjord_near_high and (sea_rising or not sea_can_drain_fjord);
+
+alg bool low_open_regime   =
+    fjord_near_low and sea_rising and sea_can_refill_fjord;
+
+alg bool high_open_regime  =
+    fjord_near_high and sea_falling and sea_can_drain_fjord;
+
+alg bool close_regime = low_close_regime or high_close_regime;
+alg bool open_regime  = low_open_regime  or high_open_regime;
+
+requirement invariant not (
+    low_close_regime and fjord_water_level.total_open > 2
+);
+
+requirement invariant not (
+    high_close_regime and fjord_water_level.total_open > 1
+);
+
+requirement invariant not (open_regime and Gate1.h > 1);
+requirement invariant not (open_regime and Gate2.h > 1);
+requirement invariant not (open_regime and Gate3.h > 1);
+requirement invariant not (open_regime and Gate4.h > 1);
+
+requirement Gate1.c_gate_rise needs not close_regime;
+requirement Gate2.c_gate_rise needs not close_regime;
+requirement Gate3.c_gate_rise needs not close_regime;
+requirement Gate4.c_gate_rise needs not close_regime;
+
+requirement Gate1.c_gate_lower needs not open_regime;
+requirement Gate2.c_gate_lower needs not open_regime;
+requirement Gate3.c_gate_lower needs not open_regime;
+requirement Gate4.c_gate_lower needs not open_regime;
+// alg bool sea_can_refill_fjord =
+//     sea_level.current_water_level >= fjord_water_level.lvl;
+// alg bool force_close_regime =
+//     (fjord_near_low  and (sea_falling or not sea_can_refill_fjord)) or
+//     (fjord_near_high and sea_rising);
+//
+// // Critical low + falling sea: preserve water -> close more.
+// requirement invariant not (
+//     fjord_near_low and sea_falling and fjord_water_level.total_open > 2
+// );
+//
+// // Critical high + rising sea: protect fjord -> close strongly.
+// requirement invariant not (
+//     fjord_near_high and sea_rising and fjord_water_level.total_open > 1
+// );
+//
+// // Force close the gates when fjord water lvls are dangerous or can be depending on sea behaviour
+// requirement Gate1.c_gate_rise needs not force_close_regime;
+// requirement Gate2.c_gate_rise needs not force_close_regime;
+// requirement Gate3.c_gate_rise needs not force_close_regime;
+// requirement Gate4.c_gate_rise needs not force_close_regime;
+// ------------------------------------------------------------------
+
+
 // Sea thresholds in mm for the current 240-step abstraction.
 // G1 itself is "above 4.5 m" -> strictly greater than 4500 mm.
 alg bool sea_close_zone = sea_level.current_water_level > 4500;
@@ -90,7 +158,10 @@ requirement gate_start_interval:
     location Wait:
         marked;
 
-        edge u_gate_step goto Ready;
+        edge Gate1.u_gate_step goto Ready;
+        edge Gate2.u_gate_step goto Ready;
+        edge Gate3.u_gate_step goto Ready;
+        edge Gate4.u_gate_step goto Ready;
 
         edge u_start_rain;
         edge u_stop_rain;

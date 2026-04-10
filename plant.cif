@@ -1,5 +1,4 @@
-uncontrollable u_sea_step, u_gate_step,
-               u_start_rain, u_stop_rain;
+uncontrollable u_sea_step, u_start_rain, u_stop_rain;
 
 controllable c_ship_green, c_ship_red, c_end_cycle;
 
@@ -8,6 +7,7 @@ controllable c_ship_green, c_ship_red, c_end_cycle;
 plant def gate_actuators():
     disc int[0..2] h = 0;
     controllable c_gate_rise, c_gate_lower;
+    uncontrollable u_gate_step;
 
     location Idle:
         initial; marked;
@@ -15,10 +15,13 @@ plant def gate_actuators():
         edge c_gate_lower when h > 0 goto Closing;
         edge u_sea_step;
     location Closing:
+        marked;                                     // otherwise supervisor removes access
         edge u_gate_step do h := h - 1 goto Moving;
     location Opening:
+        marked;                                     // otherwise supervisor removes access
         edge u_gate_step do h := h + 1 goto Moving;
     location Moving:
+        marked;                                     // otherwise supervisor removes access
         edge u_sea_step goto Idle;
 end
 
@@ -359,7 +362,11 @@ plant phase:
         edge c_ship_red;
 
         // Uncontrollable events that may still happen during the decision phase.
-        edge u_gate_step;
+        edge Gate1.u_gate_step;
+        edge Gate2.u_gate_step;
+        edge Gate3.u_gate_step;
+        edge Gate4.u_gate_step;
+
         edge u_start_rain;
         edge u_stop_rain;
 
