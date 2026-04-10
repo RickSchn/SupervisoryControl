@@ -110,10 +110,8 @@ requirement invariant fjord_water_level.lvl >= 1000;
 // With the current plant, this is modeled by constraining the sign.
 // -----------------------------------------------------------------------------
 
-//requirement invariant not (ships.green and not ship_flow_safe);
-
 requirement c_ship_green needs ship_flow_safe;
-requirement invariant not (ships.red and ship_flow_safe);
+requirement invariant not (ships.green and not ship_flow_safe);
 // -----------------------------------------------------------------------------
 // S2 is still not formalized here.
 // Reason: with only a red/green sign state and no ship request / waiting notion,
