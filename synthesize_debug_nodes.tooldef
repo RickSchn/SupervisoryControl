@@ -1,0 +1,13 @@
+// from "lib:cif" import *;
+//
+// cifdatasynth("requirements_edited.cif");
+from "lib:cif" import *;
+
+mkdir("generated", force=true);
+
+cifdatasynth(
+    "requirements_edited.cif",
+    "--forward-reach=true",
+    "-m debug",
+    "-o generated/supervisor_debug.cif"
+);
