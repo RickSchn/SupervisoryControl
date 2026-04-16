@@ -33,7 +33,7 @@ Gate4: gate_actuators();
 alg bool all_gates_idle =
     Gate1.Idle and Gate2.Idle and Gate3.Idle and Gate4.Idle;
 plant sea_level:
-    disc int[0..239] k = 153;
+    disc int[0..239] k = 224;
 
     alg int current_water_level =
         switch k:
@@ -314,7 +314,7 @@ end
 
 
 plant fjord_water_level:
-    disc int[900..4100] lvl = 2500;
+    disc int[900..4100] lvl = 3700;
 
     const int gate_coeff = 20; // mm omzet naar m^3/s
     alg bool pos_flow = sea_level.current_water_level > lvl;

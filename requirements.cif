@@ -13,73 +13,30 @@ import "plant.cif";
 alg bool fjord_near_low  = fjord_water_level.lvl <= 1500;
 alg bool fjord_near_high = fjord_water_level.lvl >= 3500;
 alg bool fjord_noncritical = not (fjord_near_low or fjord_near_high);
+alg bool fjord_force_high_close = fjord_water_level.lvl >= 3730;
 
-
-// ------------------------------------------------------------------
+// -----------------------------------------------------------------------------
+// Hydraulic policy helpers.
+// -----------------------------------------------------------------------------
 alg bool sea_rising  = sea_level.k >= 60 and sea_level.k < 180;
 alg bool sea_falling = not sea_rising;
-alg bool sea_can_refill_fjord = sea_level.current_water_level >= fjord_water_level.lvl;
-alg bool sea_can_drain_fjord  = sea_level.current_water_level <= fjord_water_level.lvl;
 
-alg bool low_close_regime  =
-    fjord_near_low and (sea_falling or not sea_can_refill_fjord);
+const int policy_margin = 44;
 
-alg bool high_close_regime =
-    fjord_near_high and (sea_rising or not sea_can_drain_fjord);
+// Hysteresis around the sea=fjord crossover.
+alg bool sea_well_above_fjord =
+    sea_level.current_water_level >= fjord_water_level.lvl + policy_margin;
+alg bool sea_well_below_fjord =
+    sea_level.current_water_level <= fjord_water_level.lvl - policy_margin;
 
-alg bool low_open_regime   =
-    fjord_near_low and sea_rising and sea_can_refill_fjord;
-
-alg bool high_open_regime  =
-    fjord_near_high and sea_falling and sea_can_drain_fjord;
-
-alg bool close_regime = low_close_regime or high_close_regime;
-alg bool open_regime  = low_open_regime  or high_open_regime;
-
-requirement invariant not (
-    low_close_regime and fjord_water_level.total_open > 2
-);
-
-requirement invariant not (
-    high_close_regime and fjord_water_level.total_open > 1
-);
-
-requirement invariant not (open_regime and Gate1.h > 1);
-requirement invariant not (open_regime and Gate2.h > 1);
-requirement invariant not (open_regime and Gate3.h > 1);
-requirement invariant not (open_regime and Gate4.h > 1);
-
-requirement Gate1.c_gate_rise needs not close_regime;
-requirement Gate2.c_gate_rise needs not close_regime;
-requirement Gate3.c_gate_rise needs not close_regime;
-requirement Gate4.c_gate_rise needs not close_regime;
-
-requirement Gate1.c_gate_lower needs not open_regime;
-requirement Gate2.c_gate_lower needs not open_regime;
-requirement Gate3.c_gate_lower needs not open_regime;
-requirement Gate4.c_gate_lower needs not open_regime;
-// alg bool sea_can_refill_fjord =
-//     sea_level.current_water_level >= fjord_water_level.lvl;
-// alg bool force_close_regime =
-//     (fjord_near_low  and (sea_falling or not sea_can_refill_fjord)) or
-//     (fjord_near_high and sea_rising);
-//
-// // Critical low + falling sea: preserve water -> close more.
-// requirement invariant not (
-//     fjord_near_low and sea_falling and fjord_water_level.total_open > 2
-// );
-//
-// // Critical high + rising sea: protect fjord -> close strongly.
-// requirement invariant not (
-//     fjord_near_high and sea_rising and fjord_water_level.total_open > 1
-// );
-//
-// // Force close the gates when fjord water lvls are dangerous or can be depending on sea behaviour
-// requirement Gate1.c_gate_rise needs not force_close_regime;
-// requirement Gate2.c_gate_rise needs not force_close_regime;
-// requirement Gate3.c_gate_rise needs not force_close_regime;
-// requirement Gate4.c_gate_rise needs not force_close_regime;
-// ------------------------------------------------------------------
+alg bool low_refill_now =
+    fjord_near_low and sea_rising and sea_well_above_fjord;
+alg bool low_conserve_now =
+    fjord_near_low and not (sea_rising and sea_well_above_fjord);
+alg bool high_drain_now =
+    fjord_near_high and sea_falling and sea_well_below_fjord;
+alg bool high_protect_now =
+    fjord_near_high and not (sea_falling and sea_well_below_fjord);
 
 
 // Sea thresholds in mm for the current 240-step abstraction.
@@ -90,19 +47,12 @@ alg bool sea_close_zone = sea_level.current_water_level > 4500;
 alg bool sea_preclose_zone = sea_level.current_water_level >= 4443;
 
 // Ship-safety condition from S1.
-alg bool ship_flow_safe = abs(fjord_water_level.gate_flow) <= 100;
+alg bool ship_flow_safe = abs(fjord_water_level.gate_flow) <= 40;
 
 // -----------------------------------------------------------------------------
 // G1: Gates must close when sea water level is above 4.5 m.
 // Conservative pre-close restriction added for the coarse abstraction.
 // -----------------------------------------------------------------------------
-
-// Redundant due to new time step size for half gate actuation.
-// requirement invariant not (sea_preclose_zone and Gate1.h = 2);
-// requirement invariant not (sea_preclose_zone and Gate2.h = 2);
-// requirement invariant not (sea_preclose_zone and Gate3.h = 2);
-// requirement invariant not (sea_preclose_zone and Gate4.h = 2);
-
 requirement invariant not (sea_close_zone and Gate1.h > 0);
 requirement invariant not (sea_close_zone and Gate2.h > 0);
 requirement invariant not (sea_close_zone and Gate3.h > 0);
@@ -124,10 +74,10 @@ end
 // In the 0/1/2 abstraction, intermediary height is h = 1.
 // -----------------------------------------------------------------------------
 
-requirement invariant not (fjord_noncritical and Gate1.h > 1);
-requirement invariant not (fjord_noncritical and Gate2.h > 1);
-requirement invariant not (fjord_noncritical and Gate3.h > 1);
-requirement invariant not (fjord_noncritical and Gate4.h > 1);
+requirement Gate1.c_gate_rise  needs not (fjord_noncritical and Gate1.h >= 1);
+requirement Gate2.c_gate_rise  needs not (fjord_noncritical and Gate2.h >= 1);
+requirement Gate3.c_gate_rise  needs not (fjord_noncritical and Gate3.h >= 1);
+requirement Gate4.c_gate_rise  needs not (fjord_noncritical and Gate4.h >= 1);
 
 // -----------------------------------------------------------------------------
 // G3: 5 s interval between gate-actuation starts.
@@ -170,6 +120,51 @@ requirement gate_start_interval:
 end
 
 // -----------------------------------------------------------------------------
+// Current-state opening bands (no lagged policy automaton).
+// -----------------------------------------------------------------------------
+
+requirement invariant not (
+    low_conserve_now and fjord_water_level.total_open > 2
+);
+
+requirement invariant not (
+    high_protect_now and fjord_water_level.total_open > 1
+);
+
+requirement invariant not (
+    low_refill_now and phase.Env and fjord_water_level.total_open < 2
+);
+
+requirement invariant not (
+    high_drain_now and phase.Env and fjord_water_level.total_open < 2
+);
+
+requirement invariant not (low_refill_now and Gate1.h > 1);
+requirement invariant not (low_refill_now and Gate2.h > 1);
+requirement invariant not (low_refill_now and Gate3.h > 1);
+requirement invariant not (low_refill_now and Gate4.h > 1);
+
+requirement invariant not (high_drain_now and Gate1.h > 1);
+requirement invariant not (high_drain_now and Gate2.h > 1);
+requirement invariant not (high_drain_now and Gate3.h > 1);
+requirement invariant not (high_drain_now and Gate4.h > 1);
+
+requirement Gate1.c_gate_rise  needs not (low_conserve_now or high_protect_now);
+requirement Gate2.c_gate_rise  needs not (low_conserve_now or high_protect_now);
+requirement Gate3.c_gate_rise  needs not (low_conserve_now or high_protect_now);
+requirement Gate4.c_gate_rise  needs not (low_conserve_now or high_protect_now);
+
+requirement Gate1.c_gate_lower needs not (low_refill_now or high_drain_now);
+requirement Gate2.c_gate_lower needs not (low_refill_now or high_drain_now);
+requirement Gate3.c_gate_lower needs not (low_refill_now or high_drain_now);
+requirement Gate4.c_gate_lower needs not (low_refill_now or high_drain_now);
+
+requirement invariant not (fjord_force_high_close and Gate1.h > 0);
+requirement invariant not (fjord_force_high_close and Gate2.h > 0);
+requirement invariant not (fjord_force_high_close and Gate3.h > 0);
+requirement invariant not (fjord_force_high_close and Gate4.h > 0);
+
+// -----------------------------------------------------------------------------
 // L1/L2: Fjord level bounds.
 // -----------------------------------------------------------------------------
 
@@ -177,18 +172,13 @@ requirement invariant fjord_water_level.lvl <= 4000;
 requirement invariant fjord_water_level.lvl >= 1000;
 
 // -----------------------------------------------------------------------------
-// S1: Ships may only be allowed when the generated flow is small enough.
+// S1/S2: Ships may only be allowed when the generated flow is small enough.
 // With the current plant, this is modeled by constraining the sign.
 // -----------------------------------------------------------------------------
 
 requirement c_ship_green needs ship_flow_safe;
 requirement invariant not (ships.green and not ship_flow_safe);
-// -----------------------------------------------------------------------------
-// S2 is still not formalized here.
-// Reason: with only a red/green sign state and no ship request / waiting notion,
-// "allowed once in a while" is not a well-posed supervisory requirement.
-// It can be discussed in the report as a plant-model assumption/limitation.
-// -----------------------------------------------------------------------------
+
 
 
 
