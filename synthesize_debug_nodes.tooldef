@@ -1,4 +1,4 @@
-//sub 5 mins
+//sub 3 mins
 from "lib:cif" import *;
 
 mkdir("generated", force=true);
