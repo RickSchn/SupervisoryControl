@@ -1,13 +1,12 @@
-// from "lib:cif" import *;
-//
-// cifdatasynth("requirements_edited.cif");
+//40-45mins
 from "lib:cif" import *;
 
 mkdir("generated", force=true);
 
 cifdatasynth(
-    "requirements_edited.cif",
+    "requirements_fix2.cif",
+    "--bdd-output=nodes",
     "--forward-reach=true",
     "-m debug",
-    "-o generated/supervisor_debug.cif"
+    "-o supervisor_debug.cif"
 );
