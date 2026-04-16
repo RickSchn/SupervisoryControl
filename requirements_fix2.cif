@@ -47,7 +47,7 @@ alg bool sea_close_zone = sea_level.current_water_level > 4500;
 alg bool sea_preclose_zone = sea_level.current_water_level >= 4443;
 
 // Ship-safety condition from S1.
-alg bool ship_flow_safe = abs(fjord_water_level.gate_flow) <= 100;
+alg bool ship_flow_safe = abs(fjord_water_level.gate_flow) <= 40;
 
 // -----------------------------------------------------------------------------
 // G1: Gates must close when sea water level is above 4.5 m.
@@ -74,10 +74,10 @@ end
 // In the 0/1/2 abstraction, intermediary height is h = 1.
 // -----------------------------------------------------------------------------
 
-requirement invariant not (fjord_noncritical and Gate1.h > 1);
-requirement invariant not (fjord_noncritical and Gate2.h > 1);
-requirement invariant not (fjord_noncritical and Gate3.h > 1);
-requirement invariant not (fjord_noncritical and Gate4.h > 1);
+requirement Gate1.c_gate_rise  needs not (fjord_noncritical and Gate1.h >= 1);
+requirement Gate2.c_gate_rise  needs not (fjord_noncritical and Gate2.h >= 1);
+requirement Gate3.c_gate_rise  needs not (fjord_noncritical and Gate3.h >= 1);
+requirement Gate4.c_gate_rise  needs not (fjord_noncritical and Gate4.h >= 1);
 
 // -----------------------------------------------------------------------------
 // G3: 5 s interval between gate-actuation starts.

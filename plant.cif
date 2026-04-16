@@ -299,22 +299,24 @@ end
 
 
 plant rain: //increase to high levels
-    const int rain_flow = 10;
-    disc int[0..100] current_rain_flow = 0;
+    //const int rain_flow = 10;
+    //disc int[0..10] current_rain_flow = 0;
 
     location Dry:
         initial;
         marked;
-        edge u_start_rain do current_rain_flow := rain_flow goto Rain;
+        //edge u_start_rain do current_rain_flow := rain_flow goto Rain;
+        edge u_start_rain goto Rain;
 
     location Rain:
         marked;
-        edge u_stop_rain do current_rain_flow := 0 goto Dry;
+        //edge u_stop_rain do current_rain_flow := 0 goto Dry;
+        edge u_stop_rain goto Dry;
 end
 
 
 plant fjord_water_level:
-    disc int[0..6000] lvl = 2000;
+    disc int[900..4100] lvl = 2000;
 
     const int gate_coeff = 20; // mm omzet naar m^3/s
     alg bool pos_flow = sea_level.current_water_level > lvl;
@@ -322,7 +324,7 @@ plant fjord_water_level:
     alg bool no_flow  = sea_level.current_water_level = lvl;
     alg int total_open = Gate1.h + Gate2.h + Gate3.h + Gate4.h;
     alg int gate_flow = total_open * gate_coeff;
-    alg int rain_flow = rain.current_rain_flow;
+    alg int rain_flow = switch rain.Rain: case true: 10 else 0 end; //rain.current_rain_flow;
 
     location:
         initial;
